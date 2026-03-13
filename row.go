@@ -78,6 +78,42 @@ func (f *File) InsertRows(sheet string, rowIdx, count int) error {
 		}
 	}
 
+	for i := range f.namedRanges {
+		nr := &f.namedRanges[i]
+		if nr.sheet == sheet {
+			if nr.startRow >= rowIdx {
+				nr.startRow += count
+				nr.endRow += count
+			} else if nr.endRow >= rowIdx {
+				nr.endRow += count
+			}
+		}
+	}
+
+	for i := range f.autoFilters {
+		af := &f.autoFilters[i]
+		if af.sheet == sheet {
+			if af.startRow >= rowIdx {
+				af.startRow += count
+				af.endRow += count
+			} else if af.endRow >= rowIdx {
+				af.endRow += count
+			}
+		}
+	}
+
+	if s.printRange != nil {
+		pr := s.printRange
+		if pr.startRow >= rowIdx {
+			pr.startRow += count
+			pr.endRow += count
+		} else if pr.endRow >= rowIdx {
+			pr.endRow += count
+		}
+	}
+
+	f.shiftFormulasOnInsertRows(sheet, rowIdx, count)
+
 	return nil
 }
 
@@ -125,6 +161,65 @@ func (f *File) RemoveRow(sheet string, rowIdx int) error {
 		}
 	}
 	s.merges = newMerges
+
+	newNR := make([]namedRange, 0, len(f.namedRanges))
+	for _, nr := range f.namedRanges {
+		if nr.sheet == sheet {
+			if nr.startRow > rowIdx {
+				nr.startRow--
+				nr.endRow--
+				newNR = append(newNR, nr)
+			} else if nr.endRow < rowIdx {
+				newNR = append(newNR, nr)
+			} else if nr.startRow < rowIdx && nr.endRow >= rowIdx {
+				nr.endRow--
+				if nr.endRow >= nr.startRow {
+					newNR = append(newNR, nr)
+				}
+			}
+		} else {
+			newNR = append(newNR, nr)
+		}
+	}
+	f.namedRanges = newNR
+
+	newAF := make([]autoFilter, 0, len(f.autoFilters))
+	for _, af := range f.autoFilters {
+		if af.sheet == sheet {
+			if af.startRow > rowIdx {
+				af.startRow--
+				af.endRow--
+				newAF = append(newAF, af)
+			} else if af.endRow < rowIdx {
+				newAF = append(newAF, af)
+			} else if af.startRow < rowIdx && af.endRow >= rowIdx {
+				af.endRow--
+				if af.endRow >= af.startRow {
+					newAF = append(newAF, af)
+				}
+			}
+		} else {
+			newAF = append(newAF, af)
+		}
+	}
+	f.autoFilters = newAF
+
+	if s.printRange != nil {
+		pr := s.printRange
+		if pr.startRow > rowIdx {
+			pr.startRow--
+			pr.endRow--
+		} else if pr.endRow >= rowIdx && pr.startRow < rowIdx {
+			pr.endRow--
+			if pr.endRow < pr.startRow {
+				s.printRange = nil
+			}
+		} else if pr.startRow == rowIdx && pr.endRow == rowIdx {
+			s.printRange = nil
+		}
+	}
+
+	f.shiftFormulasOnRemoveRow(sheet, rowIdx)
 
 	return nil
 }

@@ -34,6 +34,23 @@ func (f *File) DeleteSheet(name string) error {
 			if f.activeSheet >= len(f.sheets) {
 				f.activeSheet = len(f.sheets) - 1
 			}
+
+			newNR := make([]namedRange, 0, len(f.namedRanges))
+			for _, nr := range f.namedRanges {
+				if nr.sheet != name {
+					newNR = append(newNR, nr)
+				}
+			}
+			f.namedRanges = newNR
+
+			newAF := make([]autoFilter, 0, len(f.autoFilters))
+			for _, af := range f.autoFilters {
+				if af.sheet != name {
+					newAF = append(newAF, af)
+				}
+			}
+			f.autoFilters = newAF
+
 			return nil
 		}
 	}
@@ -72,6 +89,18 @@ func (f *File) SetSheetName(oldName, newName string) error {
 	}
 
 	s.name = newName
+
+	for i := range f.namedRanges {
+		if f.namedRanges[i].sheet == oldName {
+			f.namedRanges[i].sheet = newName
+		}
+	}
+	for i := range f.autoFilters {
+		if f.autoFilters[i].sheet == oldName {
+			f.autoFilters[i].sheet = newName
+		}
+	}
+
 	return nil
 }
 
@@ -117,11 +146,13 @@ func (f *File) CopySheet(source, target string) error {
 	}
 
 	dst := &sheet{
-		name:    target,
-		columns: make([]column, len(src.columns)),
-		rows:    make(map[int]*row),
-		maxRow:  src.maxRow,
-		maxCol:  src.maxCol,
+		name:      target,
+		columns:   make([]column, len(src.columns)),
+		rows:      make(map[int]*row),
+		maxRow:    src.maxRow,
+		maxCol:    src.maxCol,
+		freezeCol: src.freezeCol,
+		freezeRow: src.freezeRow,
 	}
 
 	copy(dst.columns, src.columns)
@@ -134,6 +165,14 @@ func (f *File) CopySheet(source, target string) error {
 		}
 		for cIdx, c := range r.cells {
 			newCell := *c
+			if c.comment != nil {
+				cp := *c.comment
+				newCell.comment = &cp
+			}
+			if c.hyperlink != nil {
+				cp := *c.hyperlink
+				newCell.hyperlink = &cp
+			}
 			newRow.cells[cIdx] = &newCell
 		}
 		dst.rows[idx] = newRow
@@ -141,6 +180,24 @@ func (f *File) CopySheet(source, target string) error {
 
 	dst.merges = make([]mergeRange, len(src.merges))
 	copy(dst.merges, src.merges)
+
+	dst.validations = make([]*dataValidation, len(src.validations))
+	for i, v := range src.validations {
+		dvCopy := *v.validation
+		dst.validations[i] = &dataValidation{
+			name:       v.name,
+			validation: &dvCopy,
+		}
+	}
+
+	if src.printRange != nil {
+		cp := *src.printRange
+		dst.printRange = &cp
+	}
+	if src.pageSetup != nil {
+		cp := *src.pageSetup
+		dst.pageSetup = &cp
+	}
 
 	f.sheets = append(f.sheets, dst)
 	return nil

@@ -22,6 +22,7 @@ const (
 	NsLoExt        = "urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0"
 	NsFieldD       = "urn:openoffice:names:experimental:ooo-ms-interop:xmlns:field:1.0"
 	NsCSS3T        = "http://www.w3.org/TR/css3-text/"
+	NsConfig       = "urn:oasis:names:tc:opendocument:xmlns:config:1.0"
 
 	MimeTypeODS = "application/vnd.oasis.opendocument.spreadsheet"
 )
@@ -48,4 +49,5 @@ var PrefixToNS = map[string]string{
 	"loext":        NsLoExt,
 	"field":        NsFieldD,
 	"css3t":        NsCSS3T,
+	"config":       NsConfig,
 }

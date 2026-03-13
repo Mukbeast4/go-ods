@@ -71,7 +71,7 @@ func NSAttr(prefix string) xml.Attr {
 	}
 }
 
-func WriteContentXML(w io.Writer, doc *DocumentContent, autoStyles []Style) error {
+func WriteContentXML(w io.Writer, doc *DocumentContent, autoStyles []Style, validations []ContentValidation, namedRanges []NamedRange, databaseRanges []DatabaseRange) error {
 	if _, err := io.WriteString(w, xml.Header); err != nil {
 		return err
 	}
@@ -102,8 +102,26 @@ func WriteContentXML(w io.Writer, doc *DocumentContent, autoStyles []Style) erro
 		return err
 	}
 
+	if len(validations) > 0 {
+		if err := writeContentValidations(xw, validations); err != nil {
+			return err
+		}
+	}
+
 	for _, table := range doc.Body.Spreadsheet.Tables {
 		if err := writeTable(xw, &table); err != nil {
+			return err
+		}
+	}
+
+	if len(namedRanges) > 0 {
+		if err := writeNamedExpressions(xw, namedRanges); err != nil {
+			return err
+		}
+	}
+
+	if len(databaseRanges) > 0 {
+		if err := writeDatabaseRanges(xw, databaseRanges); err != nil {
 			return err
 		}
 	}
@@ -272,9 +290,13 @@ func writeTextProperties(xw *Writer, tp *TextProperties) error {
 }
 
 func writeTable(xw *Writer, table *Table) error {
-	if err := xw.StartElement("table", "table",
+	tableAttrs := []xml.Attr{
 		Attr("table", "name", table.Name),
-	); err != nil {
+	}
+	if table.PrintRanges != "" {
+		tableAttrs = append(tableAttrs, Attr("table", "print-ranges", table.PrintRanges))
+	}
+	if err := xw.StartElement("table", "table", tableAttrs...); err != nil {
 		return err
 	}
 
@@ -365,6 +387,9 @@ func writeCell(xw *Writer, cell *TableCell) error {
 	if cell.StyleName != "" {
 		attrs = append(attrs, Attr("table", "style-name", cell.StyleName))
 	}
+	if cell.ContentValidationName != "" {
+		attrs = append(attrs, Attr("table", "content-validation-name", cell.ContentValidationName))
+	}
 	if cell.NumberColumnsRepeated > 1 {
 		attrs = append(attrs, Attr("table", "number-columns-repeated", fmt.Sprintf("%d", cell.NumberColumnsRepeated)))
 	}
@@ -377,6 +402,12 @@ func writeCell(xw *Writer, cell *TableCell) error {
 
 	if err := xw.StartElement("table", "table-cell", attrs...); err != nil {
 		return err
+	}
+
+	if cell.Annotation != nil {
+		if err := writeAnnotation(xw, cell.Annotation); err != nil {
+			return err
+		}
 	}
 
 	for _, p := range cell.Paragraphs {
@@ -609,4 +640,147 @@ func writeSimpleElement(xw *Writer, prefix, local, text string) error {
 		return err
 	}
 	return xw.EndElement(prefix, local)
+}
+
+func writeAnnotation(xw *Writer, ann *Annotation) error {
+	if err := xw.StartElement("office", "annotation"); err != nil {
+		return err
+	}
+	if ann.Creator != "" {
+		if err := writeSimpleElement(xw, "dc", "creator", ann.Creator); err != nil {
+			return err
+		}
+	}
+	if ann.Date != "" {
+		if err := writeSimpleElement(xw, "dc", "date", ann.Date); err != nil {
+			return err
+		}
+	}
+	if ann.Text != "" {
+		for _, line := range strings.Split(ann.Text, "\n") {
+			if err := writeSimpleElement(xw, "text", "p", line); err != nil {
+				return err
+			}
+		}
+	}
+	return xw.EndElement("office", "annotation")
+}
+
+func writeContentValidations(xw *Writer, validations []ContentValidation) error {
+	if err := xw.StartElement("table", "content-validations"); err != nil {
+		return err
+	}
+
+	for _, v := range validations {
+		attrs := []xml.Attr{
+			Attr("table", "name", v.Name),
+		}
+		if v.Condition != "" {
+			attrs = append(attrs, Attr("table", "condition", v.Condition))
+		}
+		if v.AllowEmpty {
+			attrs = append(attrs, Attr("table", "allow-empty-cell", "true"))
+		} else {
+			attrs = append(attrs, Attr("table", "allow-empty-cell", "false"))
+		}
+
+		if err := xw.StartElement("table", "content-validation", attrs...); err != nil {
+			return err
+		}
+
+		if v.ErrorMessage != nil {
+			errAttrs := []xml.Attr{}
+			if v.ErrorMessage.Display {
+				errAttrs = append(errAttrs, Attr("table", "display", "true"))
+			}
+			if v.ErrorMessage.MessageType != "" {
+				errAttrs = append(errAttrs, Attr("table", "message-type", v.ErrorMessage.MessageType))
+			}
+			if v.ErrorMessage.Title != "" {
+				errAttrs = append(errAttrs, Attr("table", "title", v.ErrorMessage.Title))
+			}
+			if err := xw.StartElement("table", "error-message", errAttrs...); err != nil {
+				return err
+			}
+			if v.ErrorMessage.Text != "" {
+				if err := writeSimpleElement(xw, "text", "p", v.ErrorMessage.Text); err != nil {
+					return err
+				}
+			}
+			if err := xw.EndElement("table", "error-message"); err != nil {
+				return err
+			}
+		}
+
+		if v.HelpMessage != nil {
+			helpAttrs := []xml.Attr{}
+			if v.HelpMessage.Display {
+				helpAttrs = append(helpAttrs, Attr("table", "display", "true"))
+			}
+			if v.HelpMessage.Title != "" {
+				helpAttrs = append(helpAttrs, Attr("table", "title", v.HelpMessage.Title))
+			}
+			if err := xw.StartElement("table", "help-message", helpAttrs...); err != nil {
+				return err
+			}
+			if v.HelpMessage.Text != "" {
+				if err := writeSimpleElement(xw, "text", "p", v.HelpMessage.Text); err != nil {
+					return err
+				}
+			}
+			if err := xw.EndElement("table", "help-message"); err != nil {
+				return err
+			}
+		}
+
+		if err := xw.EndElement("table", "content-validation"); err != nil {
+			return err
+		}
+	}
+
+	return xw.EndElement("table", "content-validations")
+}
+
+func writeNamedExpressions(xw *Writer, namedRanges []NamedRange) error {
+	if err := xw.StartElement("table", "named-expressions"); err != nil {
+		return err
+	}
+
+	for _, nr := range namedRanges {
+		attrs := []xml.Attr{
+			Attr("table", "name", nr.Name),
+			Attr("table", "base-cell-address", nr.BaseCellAddress),
+			Attr("table", "cell-range-address", nr.CellRangeAddress),
+		}
+		if err := xw.StartElement("table", "named-range", attrs...); err != nil {
+			return err
+		}
+		if err := xw.EndElement("table", "named-range"); err != nil {
+			return err
+		}
+	}
+
+	return xw.EndElement("table", "named-expressions")
+}
+
+func writeDatabaseRanges(xw *Writer, ranges []DatabaseRange) error {
+	if err := xw.StartElement("table", "database-ranges"); err != nil {
+		return err
+	}
+
+	for _, dr := range ranges {
+		attrs := []xml.Attr{
+			Attr("table", "name", dr.Name),
+			Attr("table", "target-range-address", dr.TargetRangeAddress),
+			Attr("table", "display-filter-buttons", dr.DisplayFilterButtons),
+		}
+		if err := xw.StartElement("table", "database-range", attrs...); err != nil {
+			return err
+		}
+		if err := xw.EndElement("table", "database-range"); err != nil {
+			return err
+		}
+	}
+
+	return xw.EndElement("table", "database-ranges")
 }

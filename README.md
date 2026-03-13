@@ -1,8 +1,12 @@
 # go-ods
 
+[![CI](https://github.com/Mukbeast4/go-ods/actions/workflows/ci.yml/badge.svg)](https://github.com/Mukbeast4/go-ods/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/mukbeast4/go-ods.svg)](https://pkg.go.dev/github.com/mukbeast4/go-ods)
 [![Go Report Card](https://goreportcard.com/badge/github.com/mukbeast4/go-ods)](https://goreportcard.com/report/github.com/mukbeast4/go-ods)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![codecov](https://codecov.io/gh/Mukbeast4/go-ods/branch/main/graph/badge.svg)](https://codecov.io/gh/Mukbeast4/go-ods)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Mukbeast4/go-ods)](https://github.com/Mukbeast4/go-ods/releases)
+[![Contributing](https://img.shields.io/badge/Contributing-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 Pure Go library for reading, writing, and evaluating ODS (OpenDocument Spreadsheet) files. Zero external dependencies, no LibreOffice required.
 
@@ -95,10 +99,13 @@ f.SetCellFloat("Sheet1", "A1", 50)
 
 | Category | Functions |
 |----------|-----------|
-| Math | `SUM`, `AVERAGE`, `MIN`, `MAX`, `ABS`, `ROUND`, `FLOOR`, `CEIL`, `MOD`, `POWER`, `SQRT` |
-| Logic | `IF`, `AND`, `OR`, `NOT` |
-| Text | `CONCATENATE`, `LEN`, `TRIM`, `UPPER`, `LOWER`, `LEFT`, `RIGHT`, `MID` |
-| Stats | `COUNT` |
+| Math | `SUM`, `AVERAGE`, `MIN`, `MAX`, `ABS`, `ROUND`, `FLOOR`, `CEIL`, `INT`, `MOD`, `POWER`, `SQRT` |
+| Logic | `IF`, `AND`, `OR`, `NOT`, `IFERROR` |
+| Text | `CONCATENATE`, `LEN`, `TRIM`, `UPPER`, `LOWER`, `LEFT`, `RIGHT`, `MID`, `FIND`, `SEARCH`, `SUBSTITUTE`, `REPLACE`, `TEXT`, `VALUE` |
+| Stats | `COUNT`, `COUNTA`, `COUNTIF`, `COUNTIFS` |
+| Conditional | `SUMIF`, `SUMIFS`, `SUMPRODUCT` |
+| Lookup | `VLOOKUP`, `HLOOKUP`, `INDEX`, `MATCH` |
+| Date/Time | `DATE`, `TODAY`, `NOW`, `YEAR`, `MONTH`, `DAY` |
 
 ## Reading ODS Files
 
@@ -157,11 +164,11 @@ f.SetColWidth("Sheet1", "B", 5.0)  // Set column B width
 
 ## Contributing
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/new-feature`)
-3. Commit your changes (`git commit -m 'feat: add new feature'`)
-4. Push to the branch (`git push origin feature/new-feature`)
-5. Open a Pull Request
+We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before submitting a pull request.
+
+## Security
+
+To report a security vulnerability, please see our [Security Policy](SECURITY.md).
 
 ## License
 

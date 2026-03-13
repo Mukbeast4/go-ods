@@ -105,6 +105,42 @@ func (f *File) InsertCols(sheet, colName string, count int) error {
 		}
 	}
 
+	for i := range f.namedRanges {
+		nr := &f.namedRanges[i]
+		if nr.sheet == sheet {
+			if nr.startCol >= colIdx {
+				nr.startCol += count
+				nr.endCol += count
+			} else if nr.endCol >= colIdx {
+				nr.endCol += count
+			}
+		}
+	}
+
+	for i := range f.autoFilters {
+		af := &f.autoFilters[i]
+		if af.sheet == sheet {
+			if af.startCol >= colIdx {
+				af.startCol += count
+				af.endCol += count
+			} else if af.endCol >= colIdx {
+				af.endCol += count
+			}
+		}
+	}
+
+	if s.printRange != nil {
+		pr := s.printRange
+		if pr.startCol >= colIdx {
+			pr.startCol += count
+			pr.endCol += count
+		} else if pr.endCol >= colIdx {
+			pr.endCol += count
+		}
+	}
+
+	f.shiftFormulasOnInsertCols(sheet, colIdx, count)
+
 	return nil
 }
 
@@ -159,6 +195,65 @@ func (f *File) RemoveCol(sheet, colName string) error {
 		}
 	}
 	s.merges = newMerges
+
+	newNR := make([]namedRange, 0, len(f.namedRanges))
+	for _, nr := range f.namedRanges {
+		if nr.sheet == sheet {
+			if nr.startCol > colIdx {
+				nr.startCol--
+				nr.endCol--
+				newNR = append(newNR, nr)
+			} else if nr.endCol < colIdx {
+				newNR = append(newNR, nr)
+			} else if nr.startCol < colIdx && nr.endCol >= colIdx {
+				nr.endCol--
+				if nr.endCol >= nr.startCol {
+					newNR = append(newNR, nr)
+				}
+			}
+		} else {
+			newNR = append(newNR, nr)
+		}
+	}
+	f.namedRanges = newNR
+
+	newAF := make([]autoFilter, 0, len(f.autoFilters))
+	for _, af := range f.autoFilters {
+		if af.sheet == sheet {
+			if af.startCol > colIdx {
+				af.startCol--
+				af.endCol--
+				newAF = append(newAF, af)
+			} else if af.endCol < colIdx {
+				newAF = append(newAF, af)
+			} else if af.startCol < colIdx && af.endCol >= colIdx {
+				af.endCol--
+				if af.endCol >= af.startCol {
+					newAF = append(newAF, af)
+				}
+			}
+		} else {
+			newAF = append(newAF, af)
+		}
+	}
+	f.autoFilters = newAF
+
+	if s.printRange != nil {
+		pr := s.printRange
+		if pr.startCol > colIdx {
+			pr.startCol--
+			pr.endCol--
+		} else if pr.endCol >= colIdx && pr.startCol < colIdx {
+			pr.endCol--
+			if pr.endCol < pr.startCol {
+				s.printRange = nil
+			}
+		} else if pr.startCol == colIdx && pr.endCol == colIdx {
+			s.printRange = nil
+		}
+	}
+
+	f.shiftFormulasOnRemoveCol(sheet, colIdx)
 
 	return nil
 }

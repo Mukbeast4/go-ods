@@ -526,3 +526,162 @@ func TestAverageSkipsEmpty(t *testing.T) {
 		t.Errorf("AVERAGE should skip empty cells, got %v", v)
 	}
 }
+
+func TestCOUNTIFS(t *testing.T) {
+	f := NewFile()
+	s := "Sheet1"
+
+	f.SetCellStr(s, "A1", "fruit")
+	f.SetCellStr(s, "A2", "veggie")
+	f.SetCellStr(s, "A3", "fruit")
+	f.SetCellStr(s, "A4", "fruit")
+	f.SetCellStr(s, "B1", "red")
+	f.SetCellStr(s, "B2", "green")
+	f.SetCellStr(s, "B3", "red")
+	f.SetCellStr(s, "B4", "yellow")
+
+	f.SetCellFormula(s, "C1", "COUNTIFS([.A1:.A4];\"fruit\";[.B1:.B4];\"red\")")
+	f.RecalcSheet(s)
+
+	v, _ := f.GetCellFloat(s, "C1")
+	if v != 2 {
+		t.Errorf("COUNTIFS got %v, want 2", v)
+	}
+}
+
+func TestCOUNTIFSMultiple(t *testing.T) {
+	f := NewFile()
+	s := "Sheet1"
+
+	f.SetCellStr(s, "A1", "a")
+	f.SetCellStr(s, "A2", "a")
+	f.SetCellStr(s, "A3", "b")
+	f.SetCellStr(s, "B1", "x")
+	f.SetCellStr(s, "B2", "x")
+	f.SetCellStr(s, "B3", "x")
+	f.SetCellFloat(s, "C1", 10)
+	f.SetCellFloat(s, "C2", 20)
+	f.SetCellFloat(s, "C3", 10)
+
+	f.SetCellFormula(s, "D1", "COUNTIFS([.A1:.A3];\"a\";[.B1:.B3];\"x\";[.C1:.C3];\"10\")")
+	f.RecalcSheet(s)
+
+	v, _ := f.GetCellFloat(s, "D1")
+	if v != 1 {
+		t.Errorf("COUNTIFS 3 criteria got %v, want 1", v)
+	}
+}
+
+func TestSUMIFS(t *testing.T) {
+	f := NewFile()
+	s := "Sheet1"
+
+	f.SetCellStr(s, "A1", "fruit")
+	f.SetCellStr(s, "A2", "veggie")
+	f.SetCellStr(s, "A3", "fruit")
+	f.SetCellStr(s, "B1", "red")
+	f.SetCellStr(s, "B2", "green")
+	f.SetCellStr(s, "B3", "red")
+	f.SetCellFloat(s, "C1", 10)
+	f.SetCellFloat(s, "C2", 20)
+	f.SetCellFloat(s, "C3", 30)
+
+	f.SetCellFormula(s, "D1", "SUMIFS([.C1:.C3];[.A1:.A3];\"fruit\";[.B1:.B3];\"red\")")
+	f.RecalcSheet(s)
+
+	v, _ := f.GetCellFloat(s, "D1")
+	if v != 40 {
+		t.Errorf("SUMIFS got %v, want 40", v)
+	}
+}
+
+func TestSUMIFSNumericCriteria(t *testing.T) {
+	f := NewFile()
+	s := "Sheet1"
+
+	f.SetCellFloat(s, "A1", 5)
+	f.SetCellFloat(s, "A2", 15)
+	f.SetCellFloat(s, "A3", 25)
+	f.SetCellFloat(s, "A4", 35)
+	f.SetCellFloat(s, "B1", 100)
+	f.SetCellFloat(s, "B2", 200)
+	f.SetCellFloat(s, "B3", 300)
+	f.SetCellFloat(s, "B4", 400)
+
+	f.SetCellFormula(s, "C1", "SUMIFS([.B1:.B4];[.A1:.A4];\">10\";[.A1:.A4];\"<=30\")")
+	f.RecalcSheet(s)
+
+	v, _ := f.GetCellFloat(s, "C1")
+	if v != 500 {
+		t.Errorf("SUMIFS numeric got %v, want 500", v)
+	}
+}
+
+func TestCOUNTIFSEmpty(t *testing.T) {
+	f := NewFile()
+	s := "Sheet1"
+
+	f.SetCellFormula(s, "A1", "COUNTIFS([.B1:.B3];\"x\";[.C1:.C3];\"y\")")
+	f.RecalcSheet(s)
+
+	v, _ := f.GetCellFloat(s, "A1")
+	if v != 0 {
+		t.Errorf("COUNTIFS empty got %v, want 0", v)
+	}
+}
+
+func TestSUMIFSNoMatch(t *testing.T) {
+	f := NewFile()
+	s := "Sheet1"
+
+	f.SetCellStr(s, "A1", "a")
+	f.SetCellStr(s, "A2", "b")
+	f.SetCellFloat(s, "B1", 10)
+	f.SetCellFloat(s, "B2", 20)
+
+	f.SetCellFormula(s, "C1", "SUMIFS([.B1:.B2];[.A1:.A2];\"z\")")
+	f.RecalcSheet(s)
+
+	v, _ := f.GetCellFloat(s, "C1")
+	if v != 0 {
+		t.Errorf("SUMIFS no match got %v, want 0", v)
+	}
+}
+
+func TestCrossSheetDepGraph(t *testing.T) {
+	f := NewFile()
+	f.NewSheet("Data")
+
+	f.SetCellFloat("Data", "A1", 10)
+	f.SetCellFloat("Data", "A2", 20)
+	f.SetCellFormula("Sheet1", "A1", "[Data.A1]+[Data.A2]")
+
+	err := f.RecalcAll()
+	if err != nil {
+		t.Fatalf("RecalcAll: %v", err)
+	}
+
+	v, _ := f.GetCellFloat("Sheet1", "A1")
+	if v != 30 {
+		t.Errorf("cross-sheet dep got %v, want 30", v)
+	}
+}
+
+func TestCrossSheetDepChain(t *testing.T) {
+	f := NewFile()
+	f.NewSheet("Data")
+
+	f.SetCellFloat("Data", "A1", 5)
+	f.SetCellFormula("Data", "B1", "[.A1]*2")
+	f.SetCellFormula("Sheet1", "A1", "[Data.B1]+10")
+
+	err := f.RecalcAll()
+	if err != nil {
+		t.Fatalf("RecalcAll: %v", err)
+	}
+
+	v, _ := f.GetCellFloat("Sheet1", "A1")
+	if v != 20 {
+		t.Errorf("cross-sheet chain got %v, want 20", v)
+	}
+}

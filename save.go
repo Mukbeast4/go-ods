@@ -118,6 +118,14 @@ func (f *File) buildZipEntries() ([]ozip.WriteEntry, error) {
 		{Name: "META-INF/manifest.xml", Data: manifestData},
 	}
 
+	settingsData, err := f.marshalSettings()
+	if err != nil {
+		return nil, fmt.Errorf("marshal settings: %w", err)
+	}
+	if settingsData != nil {
+		entries = append(entries, ozip.WriteEntry{Name: "settings.xml", Data: settingsData})
+	}
+
 	for name, data := range f.rawFiles {
 		entries = append(entries, ozip.WriteEntry{Name: name, Data: data})
 	}

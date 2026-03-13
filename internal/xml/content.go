@@ -21,9 +21,10 @@ type Spreadsheet struct {
 }
 
 type Table struct {
-	Name    string        `xml:"name,attr"`
-	Columns []TableColumn `xml:"table-column"`
-	Rows    []TableRow    `xml:"table-row"`
+	Name        string        `xml:"name,attr"`
+	PrintRanges string        `xml:"print-ranges,attr,omitempty"`
+	Columns     []TableColumn `xml:"table-column"`
+	Rows        []TableRow    `xml:"table-row"`
 }
 
 type TableColumn struct {
@@ -39,17 +40,58 @@ type TableRow struct {
 }
 
 type TableCell struct {
-	ValueType             string  `xml:"value-type,attr,omitempty"`
-	Value                 string  `xml:"value,attr,omitempty"`
-	DateValue             string  `xml:"date-value,attr,omitempty"`
-	BooleanValue          string  `xml:"boolean-value,attr,omitempty"`
-	StringValue           string  `xml:"string-value,attr,omitempty"`
-	Formula               string  `xml:"formula,attr,omitempty"`
-	StyleName             string  `xml:"style-name,attr,omitempty"`
-	NumberColumnsRepeated int     `xml:"number-columns-repeated,attr,omitempty"`
-	NumberColumnsSpanned  int     `xml:"number-columns-spanned,attr,omitempty"`
-	NumberRowsSpanned     int     `xml:"number-rows-spanned,attr,omitempty"`
-	Paragraphs            []TextP `xml:"p"`
+	ValueType              string      `xml:"value-type,attr,omitempty"`
+	Value                  string      `xml:"value,attr,omitempty"`
+	DateValue              string      `xml:"date-value,attr,omitempty"`
+	BooleanValue           string      `xml:"boolean-value,attr,omitempty"`
+	StringValue            string      `xml:"string-value,attr,omitempty"`
+	Formula                string      `xml:"formula,attr,omitempty"`
+	StyleName              string      `xml:"style-name,attr,omitempty"`
+	ContentValidationName  string      `xml:"content-validation-name,attr,omitempty"`
+	NumberColumnsRepeated  int         `xml:"number-columns-repeated,attr,omitempty"`
+	NumberColumnsSpanned   int         `xml:"number-columns-spanned,attr,omitempty"`
+	NumberRowsSpanned      int         `xml:"number-rows-spanned,attr,omitempty"`
+	Annotation             *Annotation `xml:"annotation,omitempty"`
+	Paragraphs             []TextP     `xml:"p"`
+}
+
+type Annotation struct {
+	Creator string
+	Date    string
+	Text    string
+}
+
+type NamedRange struct {
+	Name             string
+	BaseCellAddress  string
+	CellRangeAddress string
+}
+
+type ContentValidation struct {
+	Name         string
+	Condition    string
+	AllowEmpty   bool
+	ErrorMessage *ErrorMessage
+	HelpMessage  *HelpMessage
+}
+
+type ErrorMessage struct {
+	Display     bool
+	MessageType string
+	Title       string
+	Text        string
+}
+
+type HelpMessage struct {
+	Display bool
+	Title   string
+	Text    string
+}
+
+type DatabaseRange struct {
+	Name                 string
+	TargetRangeAddress   string
+	DisplayFilterButtons string
 }
 
 type TextP struct {

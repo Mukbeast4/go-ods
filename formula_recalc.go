@@ -8,8 +8,9 @@ import (
 )
 
 type cellRef struct {
-	col int
-	row int
+	sheet string
+	col   int
+	row   int
 }
 
 type depGraph struct {
@@ -19,6 +20,10 @@ type depGraph struct {
 }
 
 func extractRefs(formula string) []cellRef {
+	return extractRefsWithSheet(formula, "")
+}
+
+func extractRefsWithSheet(formula string, currentSheet string) []cellRef {
 	var refs []cellRef
 	i := 0
 	for i < len(formula) {
@@ -39,16 +44,24 @@ func extractRefs(formula string) []cellRef {
 		}
 
 		i++
+		sheetName := ""
 		if i < len(formula) && formula[i] == '.' {
 			i++
+			sheetName = currentSheet
 		} else {
-			for i < len(formula) && formula[i] != ']' {
+			nameStart := i
+			for i < len(formula) && formula[i] != '.' && formula[i] != ']' {
 				i++
 			}
-			if i < len(formula) {
+			sheetName = formula[nameStart:i]
+			if i < len(formula) && formula[i] == '.' {
 				i++
+			} else {
+				if i < len(formula) {
+					i++
+				}
+				continue
 			}
-			continue
 		}
 
 		start := i
@@ -72,6 +85,9 @@ func extractRefs(formula string) []cellRef {
 			}
 
 			rangeRefs := expandRange(ref1, ref2)
+			for idx := range rangeRefs {
+				rangeRefs[idx].sheet = sheetName
+			}
 			refs = append(refs, rangeRefs...)
 		} else {
 			if i < len(formula) {
@@ -79,6 +95,7 @@ func extractRefs(formula string) []cellRef {
 			}
 			cr, ok := parseRef(ref1)
 			if ok {
+				cr.sheet = sheetName
 				refs = append(refs, cr)
 			}
 		}
@@ -122,6 +139,10 @@ func expandRange(startRef, endRef string) []cellRef {
 }
 
 func buildDepGraph(s *sheet) *depGraph {
+	return buildDepGraphForSheet(s, "")
+}
+
+func buildDepGraphForSheet(s *sheet, sheetName string) *depGraph {
 	g := &depGraph{
 		edges:    make(map[cellRef][]cellRef),
 		reverse:  make(map[cellRef][]cellRef),
@@ -134,10 +155,10 @@ func buildDepGraph(s *sheet) *depGraph {
 				continue
 			}
 
-			cr := cellRef{col: colIdx, row: rowIdx}
+			cr := cellRef{sheet: sheetName, col: colIdx, row: rowIdx}
 			g.formulas[cr] = c.formula
 
-			deps := extractRefs(c.formula)
+			deps := extractRefsWithSheet(c.formula, sheetName)
 			g.edges[cr] = deps
 
 			for _, dep := range deps {
@@ -292,11 +313,66 @@ func (f *File) RecalcAll() error {
 	if f.closed {
 		return ErrFileClosed
 	}
+
+	g := &depGraph{
+		edges:    make(map[cellRef][]cellRef),
+		reverse:  make(map[cellRef][]cellRef),
+		formulas: make(map[cellRef]string),
+	}
+
 	for _, s := range f.sheets {
-		if err := f.RecalcSheet(s.name); err != nil {
-			return err
+		sg := buildDepGraphForSheet(s, s.name)
+		for cr, formula := range sg.formulas {
+			g.formulas[cr] = formula
+		}
+		for cr, deps := range sg.edges {
+			g.edges[cr] = deps
+		}
+		for dep, dependents := range sg.reverse {
+			g.reverse[dep] = append(g.reverse[dep], dependents...)
 		}
 	}
+
+	if len(g.formulas) == 0 {
+		return nil
+	}
+
+	sorted, err := g.topoSort()
+	if err != nil {
+		return err
+	}
+
+	allValues := make(map[string]CellValues)
+	for _, s := range f.sheets {
+		allValues[s.name] = collectCellValues(s)
+	}
+
+	for _, cr := range sorted {
+		formula := g.formulas[cr]
+		s := f.getSheet(cr.sheet)
+		if s == nil {
+			continue
+		}
+
+		values := allValues[cr.sheet]
+		p := &formulaParser{input: formula, pos: 0, values: values, file: f}
+		result, err := p.parseExpr()
+		if err != nil {
+			continue
+		}
+
+		c := s.getCell(cr.col, cr.row)
+		if c == nil {
+			continue
+		}
+		storeResult(c, result)
+
+		name, nameErr := CoordinatesToCellName(cr.col, cr.row)
+		if nameErr == nil {
+			values[name] = result
+		}
+	}
+
 	return nil
 }
 

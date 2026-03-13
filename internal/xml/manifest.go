@@ -20,6 +20,7 @@ func DefaultManifest() Manifest {
 			{FullPath: "content.xml", MediaType: "text/xml"},
 			{FullPath: "styles.xml", MediaType: "text/xml"},
 			{FullPath: "meta.xml", MediaType: "text/xml"},
+			{FullPath: "settings.xml", MediaType: "text/xml"},
 		},
 	}
 }

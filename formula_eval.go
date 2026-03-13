@@ -964,6 +964,70 @@ func evalFunction(name string, args []interface{}) (interface{}, error) {
 		}
 		return float64(count), nil
 
+	case "COUNTIFS":
+		if len(args) < 2 || len(args)%2 != 0 {
+			return nil, fmt.Errorf("COUNTIFS requires pairs of (range, criteria)")
+		}
+		pairs := len(args) / 2
+		ranges := make([][]interface{}, pairs)
+		criterias := make([]string, pairs)
+		for i := 0; i < pairs; i++ {
+			ranges[i] = flattenArg(args[i*2])
+			if ranges[i] == nil {
+				return float64(0), nil
+			}
+			criterias[i] = fmt.Sprintf("%v", args[i*2+1])
+		}
+		count := 0
+		for idx := range ranges[0] {
+			allMatch := true
+			for p := 0; p < pairs; p++ {
+				if idx >= len(ranges[p]) || !matchesCriteria(ranges[p][idx], criterias[p]) {
+					allMatch = false
+					break
+				}
+			}
+			if allMatch {
+				count++
+			}
+		}
+		return float64(count), nil
+
+	case "SUMIFS":
+		if len(args) < 3 || (len(args)-1)%2 != 0 {
+			return nil, fmt.Errorf("SUMIFS requires sum_range + pairs of (range, criteria)")
+		}
+		sumVals := flattenArg(args[0])
+		if sumVals == nil {
+			return float64(0), nil
+		}
+		pairs := (len(args) - 1) / 2
+		ranges := make([][]interface{}, pairs)
+		criterias := make([]string, pairs)
+		for i := 0; i < pairs; i++ {
+			ranges[i] = flattenArg(args[1+i*2])
+			if ranges[i] == nil {
+				return float64(0), nil
+			}
+			criterias[i] = fmt.Sprintf("%v", args[2+i*2])
+		}
+		sum := 0.0
+		for idx := range ranges[0] {
+			allMatch := true
+			for p := 0; p < pairs; p++ {
+				if idx >= len(ranges[p]) || !matchesCriteria(ranges[p][idx], criterias[p]) {
+					allMatch = false
+					break
+				}
+			}
+			if allMatch && idx < len(sumVals) {
+				if f, ok := toFloat(sumVals[idx]); ok {
+					sum += f
+				}
+			}
+		}
+		return sum, nil
+
 	case "VLOOKUP":
 		if len(args) < 3 {
 			return nil, fmt.Errorf("VLOOKUP requires at least 3 arguments")

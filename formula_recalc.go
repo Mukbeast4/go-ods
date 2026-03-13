@@ -41,6 +41,14 @@ func extractRefs(formula string) []cellRef {
 		i++
 		if i < len(formula) && formula[i] == '.' {
 			i++
+		} else {
+			for i < len(formula) && formula[i] != ']' {
+				i++
+			}
+			if i < len(formula) {
+				i++
+			}
+			continue
 		}
 
 		start := i
@@ -259,7 +267,8 @@ func (f *File) RecalcSheet(sheetName string) error {
 	for _, cr := range sorted {
 		formula := g.formulas[cr]
 
-		result, err := Evaluate(formula, values)
+		p := &formulaParser{input: formula, pos: 0, values: values, file: f}
+		result, err := p.parseExpr()
 		if err != nil {
 			continue
 		}

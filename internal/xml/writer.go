@@ -383,7 +383,23 @@ func writeCell(xw *Writer, cell *TableCell) error {
 		if err := xw.StartElement("text", "p"); err != nil {
 			return err
 		}
-		if p.Text != "" {
+		if p.Link != nil {
+			linkAttrs := []xml.Attr{
+				Attr("xlink", "href", p.Link.Href),
+				Attr("xlink", "type", "simple"),
+			}
+			if err := xw.StartElement("text", "a", linkAttrs...); err != nil {
+				return err
+			}
+			if p.Link.Text != "" {
+				if err := xw.CharData(p.Link.Text); err != nil {
+					return err
+				}
+			}
+			if err := xw.EndElement("text", "a"); err != nil {
+				return err
+			}
+		} else if p.Text != "" {
 			if err := xw.CharData(p.Text); err != nil {
 				return err
 			}

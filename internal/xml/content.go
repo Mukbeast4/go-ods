@@ -54,6 +54,13 @@ type TableCell struct {
 
 type TextP struct {
 	Text string `xml:",chardata"`
+	Link *TextA `xml:"a,omitempty"`
+}
+
+type TextA struct {
+	Href string `xml:"href,attr,omitempty"`
+	Type string `xml:"type,attr,omitempty"`
+	Text string `xml:",chardata"`
 }
 
 type Style struct {

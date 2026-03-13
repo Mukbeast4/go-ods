@@ -45,12 +45,14 @@ type row struct {
 }
 
 type cell struct {
-	valueType CellType
-	rawValue  string
-	formula   string
-	styleID   int
-	colSpan   int
-	rowSpan   int
+	valueType    CellType
+	rawValue     string
+	formula      string
+	styleID      int
+	colSpan      int
+	rowSpan      int
+	hyperlink    *Hyperlink
+	numberFormat string
 }
 
 type mergeRange struct {
@@ -149,7 +151,14 @@ func parseZipResult(result *ozip.ReadResult) (*File, error) {
 }
 
 type xmlParagraph struct {
-	Text string `xml:",chardata"`
+	Text  string    `xml:",chardata"`
+	Links []xmlLink `xml:",any"`
+}
+
+type xmlLink struct {
+	XMLName xml.Name `xml:""`
+	Href    string   `xml:"http://www.w3.org/1999/xlink href,attr"`
+	Text    string   `xml:",chardata"`
 }
 
 type xmlTableCell struct {
@@ -253,6 +262,7 @@ func parseContentXML(f *File, data []byte) error {
 								styleID:   c.styleID,
 								colSpan:   c.colSpan,
 								rowSpan:   c.rowSpan,
+								hyperlink: c.hyperlink,
 							}
 							if colIdx+rep > s.maxCol {
 								s.maxCol = colIdx + rep
@@ -316,7 +326,20 @@ func convertXMLCell(xc *xmlTableCell) *cell {
 	case "string", "":
 		texts := make([]string, 0, len(xc.Paragraphs))
 		for _, p := range xc.Paragraphs {
-			texts = append(texts, p.Text)
+			if len(p.Links) > 0 {
+				for _, link := range p.Links {
+					if link.Href != "" {
+						c.hyperlink = &Hyperlink{
+							URL:     link.Href,
+							Display: link.Text,
+						}
+						texts = append(texts, link.Text)
+						break
+					}
+				}
+			} else {
+				texts = append(texts, p.Text)
+			}
 		}
 		if len(texts) > 0 {
 			c.rawValue = strings.Join(texts, "\n")
@@ -504,6 +527,16 @@ func buildXMLCell(c *cell, sm *styleManager, autoStyles *[]oxml.Style) oxml.Tabl
 			*autoStyles = append(*autoStyles, convertStyle(styleName, style))
 			xmlCell.StyleName = styleName
 		}
+	}
+
+	if c.hyperlink != nil {
+		xmlCell.Paragraphs = []oxml.TextP{{
+			Link: &oxml.TextA{
+				Href: c.hyperlink.URL,
+				Type: "simple",
+				Text: c.hyperlink.Display,
+			},
+		}}
 	}
 
 	if c.colSpan > 1 {

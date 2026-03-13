@@ -6,6 +6,86 @@ import (
 	"unicode"
 )
 
+type bracketParseResult struct {
+	refSheet      string
+	ref1          string
+	ref2          string
+	isRange       bool
+	explicitSheet bool
+	endPos        int
+	skip          bool
+}
+
+func parseShiftSheetName(formula string, pos int, defaultSheet string) (sheetName string, explicitSheet bool, newPos int, valid bool) {
+	i := pos
+	if i < len(formula) && formula[i] == '.' {
+		return defaultSheet, false, i + 1, true
+	}
+
+	nameStart := i
+	for i < len(formula) && formula[i] != '.' && formula[i] != ']' {
+		i++
+	}
+	sheetName = formula[nameStart:i]
+	if i < len(formula) && formula[i] == '.' {
+		return sheetName, true, i + 1, true
+	}
+	if i < len(formula) {
+		i++
+	}
+	return "", true, i, false
+}
+
+func parseShiftBracket(formula string, pos int, sheetName string) bracketParseResult {
+	r := bracketParseResult{}
+
+	refSheet, explicit, i, valid := parseShiftSheetName(formula, pos, sheetName)
+	r.refSheet = refSheet
+	r.explicitSheet = explicit
+	if !valid {
+		r.endPos = i
+		r.skip = true
+		return r
+	}
+
+	r.ref1, r.ref2, r.isRange, i = parseBracketRange(formula, i)
+	r.endPos = i
+	return r
+}
+
+func writeShiftedRef(result *strings.Builder, refSheet string, explicitSheet bool, ref1, ref2 string, isRange bool, isRow bool, insertIdx int, delta int) {
+	newRef1 := shiftRef(ref1, isRow, insertIdx, delta)
+
+	writePrefix := func() {
+		result.WriteByte('[')
+		if explicitSheet {
+			result.WriteString(refSheet)
+		}
+		result.WriteByte('.')
+	}
+
+	if isRange {
+		newRef2 := shiftRef(ref2, isRow, insertIdx, delta)
+		if newRef1 == "#REF!" || newRef2 == "#REF!" {
+			result.WriteString("#REF!")
+		} else {
+			writePrefix()
+			result.WriteString(newRef1)
+			result.WriteString(":.")
+			result.WriteString(newRef2)
+			result.WriteByte(']')
+		}
+	} else {
+		if newRef1 == "#REF!" {
+			result.WriteString("#REF!")
+		} else {
+			writePrefix()
+			result.WriteString(newRef1)
+			result.WriteByte(']')
+		}
+	}
+}
+
 func shiftFormulaRefs(formula string, sheetName string, isRow bool, insertIdx int, delta int) string {
 	var result strings.Builder
 	i := 0
@@ -34,97 +114,26 @@ func shiftFormulaRefs(formula string, sheetName string, isRow bool, insertIdx in
 		bracketStart := i
 		i++
 
-		refSheet := ""
-		explicitSheet := false
-		if i < len(formula) && formula[i] == '.' {
-			refSheet = sheetName
-			i++
-		} else {
-			explicitSheet = true
-			nameStart := i
-			for i < len(formula) && formula[i] != '.' && formula[i] != ']' {
-				i++
-			}
-			refSheet = formula[nameStart:i]
-			if i < len(formula) && formula[i] == '.' {
-				i++
-			} else {
-				result.WriteString(formula[bracketStart : i+1])
-				if i < len(formula) {
-					i++
-				}
-				continue
-			}
+		br := parseShiftBracket(formula, i, sheetName)
+		i = br.endPos
+
+		if br.skip {
+			result.WriteString(formula[bracketStart:br.endPos])
+			continue
 		}
 
-		start1 := i
-		for i < len(formula) && formula[i] != ']' && formula[i] != ':' {
-			i++
-		}
-		ref1 := formula[start1:i]
-
-		isRange := false
-		ref2 := ""
-		if i < len(formula) && formula[i] == ':' {
-			isRange = true
-			i++
-			if i < len(formula) && formula[i] == '.' {
-				i++
-			}
-			start2 := i
-			for i < len(formula) && formula[i] != ']' {
-				i++
-			}
-			ref2 = formula[start2:i]
-		}
-		if i < len(formula) {
-			i++
-		}
-
-		if refSheet != sheetName {
+		if br.refSheet != sheetName {
 			result.WriteString(formula[bracketStart:i])
 			continue
 		}
 
-		newRef1 := shiftRef(ref1, isRow, insertIdx, delta)
-		writeSheetPrefix := func() {
-			result.WriteByte('[')
-			if explicitSheet {
-				result.WriteString(refSheet)
-			}
-			result.WriteByte('.')
-		}
-		if isRange {
-			newRef2 := shiftRef(ref2, isRow, insertIdx, delta)
-			if newRef1 == "#REF!" || newRef2 == "#REF!" {
-				result.WriteString("#REF!")
-			} else {
-				writeSheetPrefix()
-				result.WriteString(newRef1)
-				result.WriteString(":.")
-				result.WriteString(newRef2)
-				result.WriteByte(']')
-			}
-		} else {
-			if newRef1 == "#REF!" {
-				result.WriteString("#REF!")
-			} else {
-				writeSheetPrefix()
-				result.WriteString(newRef1)
-				result.WriteByte(']')
-			}
-		}
+		writeShiftedRef(&result, br.refSheet, br.explicitSheet, br.ref1, br.ref2, br.isRange, isRow, insertIdx, delta)
 	}
 
 	return result.String()
 }
 
-func shiftRef(ref string, isRow bool, insertIdx int, delta int) string {
-	colAbsolute := false
-	rowAbsolute := false
-	colStr := ""
-	rowStr := ""
-
+func parseRefComponents(ref string) (colStr string, rowStr string, colAbsolute bool, rowAbsolute bool) {
 	j := 0
 	if j < len(ref) && ref[j] == '$' {
 		colAbsolute = true
@@ -142,6 +151,27 @@ func shiftRef(ref string, isRow bool, insertIdx int, delta int) string {
 		rowStr += string(ref[j])
 		j++
 	}
+	return
+}
+
+func applyShift(val int, absolute bool, insertIdx int, delta int) (int, bool) {
+	if absolute {
+		return val, false
+	}
+	if val >= insertIdx {
+		if delta < 0 && val < insertIdx-delta {
+			return 0, true
+		}
+		val += delta
+		if val < 1 {
+			return 0, true
+		}
+	}
+	return val, false
+}
+
+func shiftRef(ref string, isRow bool, insertIdx int, delta int) string {
+	colStr, rowStr, colAbsolute, rowAbsolute := parseRefComponents(ref)
 
 	if colStr == "" || rowStr == "" {
 		return ref
@@ -151,31 +181,23 @@ func shiftRef(ref string, isRow bool, insertIdx int, delta int) string {
 	row, _ := strconv.Atoi(rowStr)
 
 	if isRow {
+		newRow, isRefErr := applyShift(row, rowAbsolute, insertIdx, delta)
 		if rowAbsolute {
 			return ref
 		}
-		if row >= insertIdx {
-			if delta < 0 && row < insertIdx-delta {
-				return "#REF!"
-			}
-			row += delta
-			if row < 1 {
-				return "#REF!"
-			}
+		if isRefErr {
+			return "#REF!"
 		}
+		row = newRow
 	} else {
+		newCol, isRefErr := applyShift(col, colAbsolute, insertIdx, delta)
 		if colAbsolute {
 			return ref
 		}
-		if col >= insertIdx {
-			if delta < 0 && col < insertIdx-delta {
-				return "#REF!"
-			}
-			col += delta
-			if col < 1 {
-				return "#REF!"
-			}
+		if isRefErr {
+			return "#REF!"
 		}
+		col = newCol
 		colStr = columnNumberToName(col)
 	}
 

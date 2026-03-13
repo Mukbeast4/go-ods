@@ -52,32 +52,39 @@ func cellTypeFromODS(name string) CellType {
 	return CellTypeString
 }
 
+func detectIntType(value interface{}) (CellType, string, bool) {
+	switch v := value.(type) {
+	case int:
+		return CellTypeFloat, strconv.FormatInt(int64(v), 10), true
+	case int8:
+		return CellTypeFloat, strconv.FormatInt(int64(v), 10), true
+	case int16:
+		return CellTypeFloat, strconv.FormatInt(int64(v), 10), true
+	case int32:
+		return CellTypeFloat, strconv.FormatInt(int64(v), 10), true
+	case int64:
+		return CellTypeFloat, strconv.FormatInt(v, 10), true
+	case uint:
+		return CellTypeFloat, strconv.FormatUint(uint64(v), 10), true
+	case uint8:
+		return CellTypeFloat, strconv.FormatUint(uint64(v), 10), true
+	case uint16:
+		return CellTypeFloat, strconv.FormatUint(uint64(v), 10), true
+	case uint32:
+		return CellTypeFloat, strconv.FormatUint(uint64(v), 10), true
+	case uint64:
+		return CellTypeFloat, strconv.FormatUint(v, 10), true
+	default:
+		return CellTypeEmpty, "", false
+	}
+}
+
 func detectCellType(value interface{}) (CellType, string) {
 	switch v := value.(type) {
 	case nil:
 		return CellTypeEmpty, ""
 	case string:
 		return CellTypeString, v
-	case int:
-		return CellTypeFloat, strconv.Itoa(v)
-	case int8:
-		return CellTypeFloat, strconv.FormatInt(int64(v), 10)
-	case int16:
-		return CellTypeFloat, strconv.FormatInt(int64(v), 10)
-	case int32:
-		return CellTypeFloat, strconv.FormatInt(int64(v), 10)
-	case int64:
-		return CellTypeFloat, strconv.FormatInt(v, 10)
-	case uint:
-		return CellTypeFloat, strconv.FormatUint(uint64(v), 10)
-	case uint8:
-		return CellTypeFloat, strconv.FormatUint(uint64(v), 10)
-	case uint16:
-		return CellTypeFloat, strconv.FormatUint(uint64(v), 10)
-	case uint32:
-		return CellTypeFloat, strconv.FormatUint(uint64(v), 10)
-	case uint64:
-		return CellTypeFloat, strconv.FormatUint(v, 10)
 	case float32:
 		return CellTypeFloat, strconv.FormatFloat(float64(v), 'f', -1, 32)
 	case float64:
@@ -92,6 +99,9 @@ func detectCellType(value interface{}) (CellType, string) {
 	case fmt.Stringer:
 		return CellTypeString, v.String()
 	default:
+		if ct, s, ok := detectIntType(value); ok {
+			return ct, s
+		}
 		return CellTypeString, fmt.Sprintf("%v", v)
 	}
 }

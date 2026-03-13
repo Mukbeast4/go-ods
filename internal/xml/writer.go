@@ -98,6 +98,22 @@ func WriteContentXML(w io.Writer, doc *DocumentContent, autoStyles []Style, vali
 	if err := xw.StartElement("office", "body"); err != nil {
 		return err
 	}
+
+	if err := writeSpreadsheetBody(xw, doc, validations, namedRanges, databaseRanges); err != nil {
+		return err
+	}
+
+	if err := xw.EndElement("office", "body"); err != nil {
+		return err
+	}
+	if err := xw.EndElement("office", "document-content"); err != nil {
+		return err
+	}
+
+	return xw.Flush()
+}
+
+func writeSpreadsheetBody(xw *Writer, doc *DocumentContent, validations []ContentValidation, namedRanges []NamedRange, databaseRanges []DatabaseRange) error {
 	if err := xw.StartElement("office", "spreadsheet"); err != nil {
 		return err
 	}
@@ -126,17 +142,7 @@ func WriteContentXML(w io.Writer, doc *DocumentContent, autoStyles []Style, vali
 		}
 	}
 
-	if err := xw.EndElement("office", "spreadsheet"); err != nil {
-		return err
-	}
-	if err := xw.EndElement("office", "body"); err != nil {
-		return err
-	}
-	if err := xw.EndElement("office", "document-content"); err != nil {
-		return err
-	}
-
-	return xw.Flush()
+	return xw.EndElement("office", "spreadsheet")
 }
 
 func writeAutoStyles(xw *Writer, styles []Style) error {
@@ -151,6 +157,42 @@ func writeAutoStyles(xw *Writer, styles []Style) error {
 	}
 
 	return xw.EndElement("office", "automatic-styles")
+}
+
+func writeTableColumnProperties(xw *Writer, tcp *TableColumnProperties) error {
+	colAttrs := []xml.Attr{}
+	if tcp.ColumnWidth != "" {
+		colAttrs = append(colAttrs, Attr("style", "column-width", tcp.ColumnWidth))
+	}
+	if err := xw.StartElement("style", "table-column-properties", colAttrs...); err != nil {
+		return err
+	}
+	return xw.EndElement("style", "table-column-properties")
+}
+
+func writeTableRowProperties(xw *Writer, trp *TableRowProperties) error {
+	rowAttrs := []xml.Attr{}
+	if trp.RowHeight != "" {
+		rowAttrs = append(rowAttrs, Attr("style", "row-height", trp.RowHeight))
+	}
+	if trp.UseOptimalHeight != "" {
+		rowAttrs = append(rowAttrs, Attr("style", "use-optimal-row-height", trp.UseOptimalHeight))
+	}
+	if err := xw.StartElement("style", "table-row-properties", rowAttrs...); err != nil {
+		return err
+	}
+	return xw.EndElement("style", "table-row-properties")
+}
+
+func writeParagraphProperties(xw *Writer, pp *ParagraphProperties) error {
+	pAttrs := []xml.Attr{}
+	if pp.TextAlign != "" {
+		pAttrs = append(pAttrs, Attr("fo", "text-align", pp.TextAlign))
+	}
+	if err := xw.StartElement("style", "paragraph-properties", pAttrs...); err != nil {
+		return err
+	}
+	return xw.EndElement("style", "paragraph-properties")
 }
 
 func writeStyle(xw *Writer, s *Style) error {
@@ -170,30 +212,13 @@ func writeStyle(xw *Writer, s *Style) error {
 	}
 
 	if s.TableColumnProperties != nil {
-		colAttrs := []xml.Attr{}
-		if s.TableColumnProperties.ColumnWidth != "" {
-			colAttrs = append(colAttrs, Attr("style", "column-width", s.TableColumnProperties.ColumnWidth))
-		}
-		if err := xw.StartElement("style", "table-column-properties", colAttrs...); err != nil {
-			return err
-		}
-		if err := xw.EndElement("style", "table-column-properties"); err != nil {
+		if err := writeTableColumnProperties(xw, s.TableColumnProperties); err != nil {
 			return err
 		}
 	}
 
 	if s.TableRowProperties != nil {
-		rowAttrs := []xml.Attr{}
-		if s.TableRowProperties.RowHeight != "" {
-			rowAttrs = append(rowAttrs, Attr("style", "row-height", s.TableRowProperties.RowHeight))
-		}
-		if s.TableRowProperties.UseOptimalHeight != "" {
-			rowAttrs = append(rowAttrs, Attr("style", "use-optimal-row-height", s.TableRowProperties.UseOptimalHeight))
-		}
-		if err := xw.StartElement("style", "table-row-properties", rowAttrs...); err != nil {
-			return err
-		}
-		if err := xw.EndElement("style", "table-row-properties"); err != nil {
+		if err := writeTableRowProperties(xw, s.TableRowProperties); err != nil {
 			return err
 		}
 	}
@@ -211,14 +236,7 @@ func writeStyle(xw *Writer, s *Style) error {
 	}
 
 	if s.ParagraphProperties != nil {
-		pAttrs := []xml.Attr{}
-		if s.ParagraphProperties.TextAlign != "" {
-			pAttrs = append(pAttrs, Attr("fo", "text-align", s.ParagraphProperties.TextAlign))
-		}
-		if err := xw.StartElement("style", "paragraph-properties", pAttrs...); err != nil {
-			return err
-		}
-		if err := xw.EndElement("style", "paragraph-properties"); err != nil {
+		if err := writeParagraphProperties(xw, s.ParagraphProperties); err != nil {
 			return err
 		}
 	}
@@ -350,31 +368,71 @@ func writeRow(xw *Writer, row *TableRow) error {
 	return xw.EndElement("table", "table-row")
 }
 
-func writeCell(xw *Writer, cell *TableCell) error {
-	attrs := []xml.Attr{}
+func writeCellValueAttrs(cell *TableCell) []xml.Attr {
+	var attrs []xml.Attr
+	if cell.ValueType == "" {
+		return attrs
+	}
 
-	if cell.ValueType != "" {
-		attrs = append(attrs, Attr("office", "value-type", cell.ValueType))
+	attrs = append(attrs, Attr("office", "value-type", cell.ValueType))
 
-		switch cell.ValueType {
-		case "float", "currency", "percentage":
-			if cell.Value != "" {
-				attrs = append(attrs, Attr("office", "value", cell.Value))
-			}
-		case "date":
-			if cell.DateValue != "" {
-				attrs = append(attrs, Attr("office", "date-value", cell.DateValue))
-			}
-		case "boolean":
-			if cell.BooleanValue != "" {
-				attrs = append(attrs, Attr("office", "boolean-value", cell.BooleanValue))
-			}
-		case "string":
-			if cell.StringValue != "" {
-				attrs = append(attrs, Attr("office", "string-value", cell.StringValue))
-			}
+	switch cell.ValueType {
+	case "float", "currency", "percentage":
+		if cell.Value != "" {
+			attrs = append(attrs, Attr("office", "value", cell.Value))
+		}
+	case "date":
+		if cell.DateValue != "" {
+			attrs = append(attrs, Attr("office", "date-value", cell.DateValue))
+		}
+	case "boolean":
+		if cell.BooleanValue != "" {
+			attrs = append(attrs, Attr("office", "boolean-value", cell.BooleanValue))
+		}
+	case "string":
+		if cell.StringValue != "" {
+			attrs = append(attrs, Attr("office", "string-value", cell.StringValue))
 		}
 	}
+
+	return attrs
+}
+
+func writeCellParagraphs(xw *Writer, cell *TableCell) error {
+	for _, p := range cell.Paragraphs {
+		if err := xw.StartElement("text", "p"); err != nil {
+			return err
+		}
+		if p.Link != nil {
+			linkAttrs := []xml.Attr{
+				Attr("xlink", "href", p.Link.Href),
+				Attr("xlink", "type", "simple"),
+			}
+			if err := xw.StartElement("text", "a", linkAttrs...); err != nil {
+				return err
+			}
+			if p.Link.Text != "" {
+				if err := xw.CharData(p.Link.Text); err != nil {
+					return err
+				}
+			}
+			if err := xw.EndElement("text", "a"); err != nil {
+				return err
+			}
+		} else if p.Text != "" {
+			if err := xw.CharData(p.Text); err != nil {
+				return err
+			}
+		}
+		if err := xw.EndElement("text", "p"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeCell(xw *Writer, cell *TableCell) error {
+	attrs := writeCellValueAttrs(cell)
 
 	if cell.Formula != "" {
 		formula := cell.Formula
@@ -410,37 +468,39 @@ func writeCell(xw *Writer, cell *TableCell) error {
 		}
 	}
 
-	for _, p := range cell.Paragraphs {
-		if err := xw.StartElement("text", "p"); err != nil {
-			return err
-		}
-		if p.Link != nil {
-			linkAttrs := []xml.Attr{
-				Attr("xlink", "href", p.Link.Href),
-				Attr("xlink", "type", "simple"),
-			}
-			if err := xw.StartElement("text", "a", linkAttrs...); err != nil {
-				return err
-			}
-			if p.Link.Text != "" {
-				if err := xw.CharData(p.Link.Text); err != nil {
-					return err
-				}
-			}
-			if err := xw.EndElement("text", "a"); err != nil {
-				return err
-			}
-		} else if p.Text != "" {
-			if err := xw.CharData(p.Text); err != nil {
-				return err
-			}
-		}
-		if err := xw.EndElement("text", "p"); err != nil {
-			return err
-		}
+	if err := writeCellParagraphs(xw, cell); err != nil {
+		return err
 	}
 
 	return xw.EndElement("table", "table-cell")
+}
+
+type metaField struct {
+	prefix string
+	local  string
+	value  string
+}
+
+func writeMetaFields(xw *Writer, meta *Meta) error {
+	fields := []metaField{
+		{"meta", "generator", meta.Generator},
+		{"dc", "title", meta.Title},
+		{"dc", "description", meta.Description},
+		{"dc", "subject", meta.Subject},
+		{"dc", "creator", meta.Creator},
+		{"meta", "creation-date", meta.CreationDate},
+		{"dc", "date", meta.Date},
+	}
+
+	for _, f := range fields {
+		if f.value == "" {
+			continue
+		}
+		if err := writeSimpleElement(xw, f.prefix, f.local, f.value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func WriteMetaXML(w io.Writer, meta *DocumentMeta) error {
@@ -462,40 +522,8 @@ func WriteMetaXML(w io.Writer, meta *DocumentMeta) error {
 		return err
 	}
 
-	if meta.Meta.Generator != "" {
-		if err := writeSimpleElement(xw, "meta", "generator", meta.Meta.Generator); err != nil {
-			return err
-		}
-	}
-	if meta.Meta.Title != "" {
-		if err := writeSimpleElement(xw, "dc", "title", meta.Meta.Title); err != nil {
-			return err
-		}
-	}
-	if meta.Meta.Description != "" {
-		if err := writeSimpleElement(xw, "dc", "description", meta.Meta.Description); err != nil {
-			return err
-		}
-	}
-	if meta.Meta.Subject != "" {
-		if err := writeSimpleElement(xw, "dc", "subject", meta.Meta.Subject); err != nil {
-			return err
-		}
-	}
-	if meta.Meta.Creator != "" {
-		if err := writeSimpleElement(xw, "dc", "creator", meta.Meta.Creator); err != nil {
-			return err
-		}
-	}
-	if meta.Meta.CreationDate != "" {
-		if err := writeSimpleElement(xw, "meta", "creation-date", meta.Meta.CreationDate); err != nil {
-			return err
-		}
-	}
-	if meta.Meta.Date != "" {
-		if err := writeSimpleElement(xw, "dc", "date", meta.Meta.Date); err != nil {
-			return err
-		}
+	if err := writeMetaFields(xw, &meta.Meta); err != nil {
+		return err
 	}
 
 	if err := xw.EndElement("office", "meta"); err != nil {
@@ -506,6 +534,47 @@ func WriteMetaXML(w io.Writer, meta *DocumentMeta) error {
 	}
 
 	return xw.Flush()
+}
+
+func writeDefaultStyles(xw *Writer, styles []DefaultStyle) error {
+	for _, ds := range styles {
+		attrs := []xml.Attr{Attr("style", "family", ds.Family)}
+		if err := xw.StartElement("style", "default-style", attrs...); err != nil {
+			return err
+		}
+		if ds.ParagraphProperties != nil {
+			if err := writeParagraphProperties(xw, ds.ParagraphProperties); err != nil {
+				return err
+			}
+		}
+		if ds.TextProperties != nil {
+			if err := writeTextProperties(xw, ds.TextProperties); err != nil {
+				return err
+			}
+		}
+		if err := xw.EndElement("style", "default-style"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeMasterPages(xw *Writer, pages []MasterPage) error {
+	for _, mp := range pages {
+		mpAttrs := []xml.Attr{
+			Attr("style", "name", mp.Name),
+		}
+		if mp.PageLayoutName != "" {
+			mpAttrs = append(mpAttrs, Attr("style", "page-layout-name", mp.PageLayoutName))
+		}
+		if err := xw.StartElement("style", "master-page", mpAttrs...); err != nil {
+			return err
+		}
+		if err := xw.EndElement("style", "master-page"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func WriteStylesXML(w io.Writer, styles *DocumentStyles) error {
@@ -530,31 +599,8 @@ func WriteStylesXML(w io.Writer, styles *DocumentStyles) error {
 	if err := xw.StartElement("office", "styles"); err != nil {
 		return err
 	}
-	for _, ds := range styles.Styles.DefaultStyles {
-		attrs := []xml.Attr{Attr("style", "family", ds.Family)}
-		if err := xw.StartElement("style", "default-style", attrs...); err != nil {
-			return err
-		}
-		if ds.ParagraphProperties != nil {
-			pAttrs := []xml.Attr{}
-			if ds.ParagraphProperties.TextAlign != "" {
-				pAttrs = append(pAttrs, Attr("fo", "text-align", ds.ParagraphProperties.TextAlign))
-			}
-			if err := xw.StartElement("style", "paragraph-properties", pAttrs...); err != nil {
-				return err
-			}
-			if err := xw.EndElement("style", "paragraph-properties"); err != nil {
-				return err
-			}
-		}
-		if ds.TextProperties != nil {
-			if err := writeTextProperties(xw, ds.TextProperties); err != nil {
-				return err
-			}
-		}
-		if err := xw.EndElement("style", "default-style"); err != nil {
-			return err
-		}
+	if err := writeDefaultStyles(xw, styles.Styles.DefaultStyles); err != nil {
+		return err
 	}
 	if err := xw.EndElement("office", "styles"); err != nil {
 		return err
@@ -570,19 +616,8 @@ func WriteStylesXML(w io.Writer, styles *DocumentStyles) error {
 	if err := xw.StartElement("office", "master-styles"); err != nil {
 		return err
 	}
-	for _, mp := range styles.MasterStyles.MasterPages {
-		mpAttrs := []xml.Attr{
-			Attr("style", "name", mp.Name),
-		}
-		if mp.PageLayoutName != "" {
-			mpAttrs = append(mpAttrs, Attr("style", "page-layout-name", mp.PageLayoutName))
-		}
-		if err := xw.StartElement("style", "master-page", mpAttrs...); err != nil {
-			return err
-		}
-		if err := xw.EndElement("style", "master-page"); err != nil {
-			return err
-		}
+	if err := writeMasterPages(xw, styles.MasterStyles.MasterPages); err != nil {
+		return err
 	}
 	if err := xw.EndElement("office", "master-styles"); err != nil {
 		return err
@@ -666,6 +701,47 @@ func writeAnnotation(xw *Writer, ann *Annotation) error {
 	return xw.EndElement("office", "annotation")
 }
 
+func writeErrorMessage(xw *Writer, em *ErrorMessage) error {
+	attrs := []xml.Attr{}
+	if em.Display {
+		attrs = append(attrs, Attr("table", "display", "true"))
+	}
+	if em.MessageType != "" {
+		attrs = append(attrs, Attr("table", "message-type", em.MessageType))
+	}
+	if em.Title != "" {
+		attrs = append(attrs, Attr("table", "title", em.Title))
+	}
+	if err := xw.StartElement("table", "error-message", attrs...); err != nil {
+		return err
+	}
+	if em.Text != "" {
+		if err := writeSimpleElement(xw, "text", "p", em.Text); err != nil {
+			return err
+		}
+	}
+	return xw.EndElement("table", "error-message")
+}
+
+func writeHelpMessage(xw *Writer, hm *HelpMessage) error {
+	attrs := []xml.Attr{}
+	if hm.Display {
+		attrs = append(attrs, Attr("table", "display", "true"))
+	}
+	if hm.Title != "" {
+		attrs = append(attrs, Attr("table", "title", hm.Title))
+	}
+	if err := xw.StartElement("table", "help-message", attrs...); err != nil {
+		return err
+	}
+	if hm.Text != "" {
+		if err := writeSimpleElement(xw, "text", "p", hm.Text); err != nil {
+			return err
+		}
+	}
+	return xw.EndElement("table", "help-message")
+}
+
 func writeContentValidations(xw *Writer, validations []ContentValidation) error {
 	if err := xw.StartElement("table", "content-validations"); err != nil {
 		return err
@@ -689,46 +765,13 @@ func writeContentValidations(xw *Writer, validations []ContentValidation) error 
 		}
 
 		if v.ErrorMessage != nil {
-			errAttrs := []xml.Attr{}
-			if v.ErrorMessage.Display {
-				errAttrs = append(errAttrs, Attr("table", "display", "true"))
-			}
-			if v.ErrorMessage.MessageType != "" {
-				errAttrs = append(errAttrs, Attr("table", "message-type", v.ErrorMessage.MessageType))
-			}
-			if v.ErrorMessage.Title != "" {
-				errAttrs = append(errAttrs, Attr("table", "title", v.ErrorMessage.Title))
-			}
-			if err := xw.StartElement("table", "error-message", errAttrs...); err != nil {
-				return err
-			}
-			if v.ErrorMessage.Text != "" {
-				if err := writeSimpleElement(xw, "text", "p", v.ErrorMessage.Text); err != nil {
-					return err
-				}
-			}
-			if err := xw.EndElement("table", "error-message"); err != nil {
+			if err := writeErrorMessage(xw, v.ErrorMessage); err != nil {
 				return err
 			}
 		}
 
 		if v.HelpMessage != nil {
-			helpAttrs := []xml.Attr{}
-			if v.HelpMessage.Display {
-				helpAttrs = append(helpAttrs, Attr("table", "display", "true"))
-			}
-			if v.HelpMessage.Title != "" {
-				helpAttrs = append(helpAttrs, Attr("table", "title", v.HelpMessage.Title))
-			}
-			if err := xw.StartElement("table", "help-message", helpAttrs...); err != nil {
-				return err
-			}
-			if v.HelpMessage.Text != "" {
-				if err := writeSimpleElement(xw, "text", "p", v.HelpMessage.Text); err != nil {
-					return err
-				}
-			}
-			if err := xw.EndElement("table", "help-message"); err != nil {
+			if err := writeHelpMessage(xw, v.HelpMessage); err != nil {
 				return err
 			}
 		}

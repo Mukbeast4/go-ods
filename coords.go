@@ -5,6 +5,23 @@ import (
 	"strings"
 )
 
+func parseRowNumber(s string) (int, error) {
+	if s == "" {
+		return 0, ErrInvalidCell
+	}
+	row := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, ErrInvalidCell
+		}
+		row = row*10 + int(c-'0')
+	}
+	if row < 1 {
+		return 0, ErrInvalidCell
+	}
+	return row, nil
+}
+
 func CellNameToCoordinates(cell string) (col, row int, err error) {
 	cell = strings.TrimSpace(cell)
 	if cell == "" {
@@ -33,16 +50,9 @@ func CellNameToCoordinates(cell string) (col, row int, err error) {
 		return 0, 0, ErrInvalidCell
 	}
 
-	row = 0
-	for _, c := range rowStr {
-		if c < '0' || c > '9' {
-			return 0, 0, ErrInvalidCell
-		}
-		row = row*10 + int(c-'0')
-	}
-
-	if row < 1 {
-		return 0, 0, ErrInvalidCell
+	row, err = parseRowNumber(rowStr)
+	if err != nil {
+		return 0, 0, err
 	}
 
 	return col, row, nil

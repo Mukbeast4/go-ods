@@ -23,6 +23,80 @@ func extractRefs(formula string) []cellRef {
 	return extractRefsWithSheet(formula, "")
 }
 
+func parseBracketSheetName(formula string, pos int, currentSheet string) (sheetName string, newPos int, valid bool) {
+	i := pos
+	if i < len(formula) && formula[i] == '.' {
+		return currentSheet, i + 1, true
+	}
+
+	nameStart := i
+	for i < len(formula) && formula[i] != '.' && formula[i] != ']' {
+		i++
+	}
+	sheetName = formula[nameStart:i]
+	if i < len(formula) && formula[i] == '.' {
+		return sheetName, i + 1, true
+	}
+	if i < len(formula) {
+		i++
+	}
+	return "", i, false
+}
+
+func parseBracketRange(formula string, pos int) (ref1 string, ref2 string, isRange bool, newPos int) {
+	i := pos
+	start := i
+	for i < len(formula) && formula[i] != ']' && formula[i] != ':' {
+		i++
+	}
+	ref1 = formula[start:i]
+
+	if i < len(formula) && formula[i] == ':' {
+		i++
+		if i < len(formula) && formula[i] == '.' {
+			i++
+		}
+		start2 := i
+		for i < len(formula) && formula[i] != ']' {
+			i++
+		}
+		ref2 = formula[start2:i]
+		if i < len(formula) {
+			i++
+		}
+		return ref1, ref2, true, i
+	}
+
+	if i < len(formula) {
+		i++
+	}
+	return ref1, "", false, i
+}
+
+func parseBracketRef(formula string, pos int, currentSheet string) ([]cellRef, int) {
+	sheetName, i, valid := parseBracketSheetName(formula, pos, currentSheet)
+	if !valid {
+		return nil, i
+	}
+
+	ref1, ref2, isRange, i := parseBracketRange(formula, i)
+
+	if isRange {
+		rangeRefs := expandRange(ref1, ref2)
+		for idx := range rangeRefs {
+			rangeRefs[idx].sheet = sheetName
+		}
+		return rangeRefs, i
+	}
+
+	cr, ok := parseRef(ref1)
+	if ok {
+		cr.sheet = sheetName
+		return []cellRef{cr}, i
+	}
+	return nil, i
+}
+
 func extractRefsWithSheet(formula string, currentSheet string) []cellRef {
 	var refs []cellRef
 	i := 0
@@ -44,61 +118,9 @@ func extractRefsWithSheet(formula string, currentSheet string) []cellRef {
 		}
 
 		i++
-		sheetName := ""
-		if i < len(formula) && formula[i] == '.' {
-			i++
-			sheetName = currentSheet
-		} else {
-			nameStart := i
-			for i < len(formula) && formula[i] != '.' && formula[i] != ']' {
-				i++
-			}
-			sheetName = formula[nameStart:i]
-			if i < len(formula) && formula[i] == '.' {
-				i++
-			} else {
-				if i < len(formula) {
-					i++
-				}
-				continue
-			}
-		}
-
-		start := i
-		for i < len(formula) && formula[i] != ']' && formula[i] != ':' {
-			i++
-		}
-		ref1 := formula[start:i]
-
-		if i < len(formula) && formula[i] == ':' {
-			i++
-			if i < len(formula) && formula[i] == '.' {
-				i++
-			}
-			start2 := i
-			for i < len(formula) && formula[i] != ']' {
-				i++
-			}
-			ref2 := formula[start2:i]
-			if i < len(formula) {
-				i++
-			}
-
-			rangeRefs := expandRange(ref1, ref2)
-			for idx := range rangeRefs {
-				rangeRefs[idx].sheet = sheetName
-			}
-			refs = append(refs, rangeRefs...)
-		} else {
-			if i < len(formula) {
-				i++
-			}
-			cr, ok := parseRef(ref1)
-			if ok {
-				cr.sheet = sheetName
-				refs = append(refs, cr)
-			}
-		}
+		found, newPos := parseBracketRef(formula, i, currentSheet)
+		i = newPos
+		refs = append(refs, found...)
 	}
 	return refs
 }

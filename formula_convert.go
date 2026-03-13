@@ -3,6 +3,7 @@ package goods
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"unicode"
 )
 
@@ -87,153 +88,213 @@ func splitFuncArgs(s string) []string {
 	return args
 }
 
+type convertFunc func([]string) string
+
+var (
+	convertFunctionsOnce sync.Once
+	convertFunctionsMap  map[string]convertFunc
+)
+
+func getConvertFunctions() map[string]convertFunc {
+	convertFunctionsOnce.Do(func() {
+		convertFunctionsMap = map[string]convertFunc{
+			"IF":          convertIF,
+			"AND":         convertAND,
+			"OR":          convertOR,
+			"NOT":         convertNOT,
+			"ABS":         convertABS,
+			"SUM":         convertSUM,
+			"MIN":         convertMIN,
+			"MAX":         convertMAX,
+			"ROUND":       convertROUND,
+			"CONCATENATE": convertCONCATENATE,
+			"LEN":         convertLEN,
+			"TRIM":        convertTRIM,
+			"UPPER":       convertUPPER,
+			"LOWER":       convertLOWER,
+			"LEFT":        convertLEFT,
+			"RIGHT":       convertRIGHT,
+			"MID":         convertMID,
+			"MOD":         convertMOD,
+			"POWER":       convertPOWER,
+			"SQRT":        convertSQRT,
+			"AVERAGE":     convertAVERAGE,
+		}
+	})
+	return convertFunctionsMap
+}
+
 func convertFuncToGo(name string, args []string) string {
-	switch name {
-	case "IF":
-		if len(args) == 3 {
-			cond := convertExpr(args[0])
-			valTrue := convertExpr(args[1])
-			valFalse := convertExpr(args[2])
-			return fmt.Sprintf("func() interface{} { if %s { return %s } else { return %s } }()", cond, valTrue, valFalse)
+	if fn, ok := getConvertFunctions()[name]; ok {
+		if result := fn(args); result != "" {
+			return result
 		}
-		if len(args) == 2 {
-			cond := convertExpr(args[0])
-			valTrue := convertExpr(args[1])
-			return fmt.Sprintf("func() interface{} { if %s { return %s } else { return nil } }()", cond, valTrue)
-		}
-
-	case "AND":
-		parts := make([]string, len(args))
-		for i, a := range args {
-			parts[i] = convertExpr(a)
-		}
-		return "(" + strings.Join(parts, " && ") + ")"
-
-	case "OR":
-		parts := make([]string, len(args))
-		for i, a := range args {
-			parts[i] = convertExpr(a)
-		}
-		return "(" + strings.Join(parts, " || ") + ")"
-
-	case "NOT":
-		if len(args) == 1 {
-			return "!" + convertExpr(args[0])
-		}
-
-	case "ABS":
-		if len(args) == 1 {
-			return "math.Abs(" + convertExpr(args[0]) + ")"
-		}
-
-	case "SUM":
-		if len(args) == 1 {
-			return convertSumRangeToGo(args[0])
-		}
-		parts := make([]string, len(args))
-		for i, a := range args {
-			parts[i] = convertExpr(a)
-		}
-		return "(" + strings.Join(parts, " + ") + ")"
-
-	case "MIN":
-		parts := make([]string, len(args))
-		for i, a := range args {
-			parts[i] = convertExpr(a)
-		}
-		return "min(" + strings.Join(parts, ", ") + ")"
-
-	case "MAX":
-		parts := make([]string, len(args))
-		for i, a := range args {
-			parts[i] = convertExpr(a)
-		}
-		return "max(" + strings.Join(parts, ", ") + ")"
-
-	case "ROUND":
-		if len(args) >= 1 {
-			val := convertExpr(args[0])
-			if len(args) == 2 {
-				return fmt.Sprintf("math.Round(%s, %s)", val, convertExpr(args[1]))
-			}
-			return fmt.Sprintf("math.Round(%s)", val)
-		}
-
-	case "CONCATENATE":
-		parts := make([]string, len(args))
-		for i, a := range args {
-			parts[i] = convertExpr(a)
-		}
-		return strings.Join(parts, " + ")
-
-	case "LEN":
-		if len(args) == 1 {
-			return "len(" + convertExpr(args[0]) + ")"
-		}
-
-	case "TRIM":
-		if len(args) == 1 {
-			return "strings.TrimSpace(" + convertExpr(args[0]) + ")"
-		}
-
-	case "UPPER":
-		if len(args) == 1 {
-			return "strings.ToUpper(" + convertExpr(args[0]) + ")"
-		}
-
-	case "LOWER":
-		if len(args) == 1 {
-			return "strings.ToLower(" + convertExpr(args[0]) + ")"
-		}
-
-	case "LEFT":
-		if len(args) == 2 {
-			return fmt.Sprintf("%s[:%s]", convertExpr(args[0]), convertExpr(args[1]))
-		}
-
-	case "RIGHT":
-		if len(args) == 2 {
-			val := convertExpr(args[0])
-			n := convertExpr(args[1])
-			return fmt.Sprintf("%s[len(%s)-%s:]", val, val, n)
-		}
-
-	case "MID":
-		if len(args) == 3 {
-			val := convertExpr(args[0])
-			start := convertExpr(args[1])
-			length := convertExpr(args[2])
-			return fmt.Sprintf("%s[%s-1:%s-1+%s]", val, start, start, length)
-		}
-
-	case "MOD":
-		if len(args) == 2 {
-			return fmt.Sprintf("math.Mod(%s, %s)", convertExpr(args[0]), convertExpr(args[1]))
-		}
-
-	case "POWER":
-		if len(args) == 2 {
-			return fmt.Sprintf("math.Pow(%s, %s)", convertExpr(args[0]), convertExpr(args[1]))
-		}
-
-	case "SQRT":
-		if len(args) == 1 {
-			return fmt.Sprintf("math.Sqrt(%s)", convertExpr(args[0]))
-		}
-
-	case "AVERAGE":
-		parts := make([]string, len(args))
-		for i, a := range args {
-			parts[i] = convertExpr(a)
-		}
-		return fmt.Sprintf("((%s) / %d)", strings.Join(parts, " + "), len(parts))
 	}
 
+	return convertFallback(name, args)
+}
+
+func convertFallback(name string, args []string) string {
 	parts := make([]string, len(args))
 	for i, a := range args {
 		parts[i] = convertExpr(a)
 	}
 	return strings.ToLower(name) + "(" + strings.Join(parts, ", ") + ")"
+}
+
+func convertAllArgs(args []string) []string {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = convertExpr(a)
+	}
+	return parts
+}
+
+func convertIF(args []string) string {
+	if len(args) == 3 {
+		cond := convertExpr(args[0])
+		valTrue := convertExpr(args[1])
+		valFalse := convertExpr(args[2])
+		return fmt.Sprintf("func() interface{} { if %s { return %s } else { return %s } }()", cond, valTrue, valFalse)
+	}
+	if len(args) == 2 {
+		cond := convertExpr(args[0])
+		valTrue := convertExpr(args[1])
+		return fmt.Sprintf("func() interface{} { if %s { return %s } else { return nil } }()", cond, valTrue)
+	}
+	return ""
+}
+
+func convertAND(args []string) string {
+	return "(" + strings.Join(convertAllArgs(args), " && ") + ")"
+}
+
+func convertOR(args []string) string {
+	return "(" + strings.Join(convertAllArgs(args), " || ") + ")"
+}
+
+func convertNOT(args []string) string {
+	if len(args) == 1 {
+		return "!" + convertExpr(args[0])
+	}
+	return ""
+}
+
+func convertABS(args []string) string {
+	if len(args) == 1 {
+		return "math.Abs(" + convertExpr(args[0]) + ")"
+	}
+	return ""
+}
+
+func convertSUM(args []string) string {
+	if len(args) == 1 {
+		return convertSumRangeToGo(args[0])
+	}
+	return "(" + strings.Join(convertAllArgs(args), " + ") + ")"
+}
+
+func convertMIN(args []string) string {
+	return "min(" + strings.Join(convertAllArgs(args), ", ") + ")"
+}
+
+func convertMAX(args []string) string {
+	return "max(" + strings.Join(convertAllArgs(args), ", ") + ")"
+}
+
+func convertROUND(args []string) string {
+	if len(args) >= 1 {
+		val := convertExpr(args[0])
+		if len(args) == 2 {
+			return fmt.Sprintf("math.Round(%s, %s)", val, convertExpr(args[1]))
+		}
+		return fmt.Sprintf("math.Round(%s)", val)
+	}
+	return ""
+}
+
+func convertCONCATENATE(args []string) string {
+	return strings.Join(convertAllArgs(args), " + ")
+}
+
+func convertLEN(args []string) string {
+	if len(args) == 1 {
+		return "len(" + convertExpr(args[0]) + ")"
+	}
+	return ""
+}
+
+func convertTRIM(args []string) string {
+	if len(args) == 1 {
+		return "strings.TrimSpace(" + convertExpr(args[0]) + ")"
+	}
+	return ""
+}
+
+func convertUPPER(args []string) string {
+	if len(args) == 1 {
+		return "strings.ToUpper(" + convertExpr(args[0]) + ")"
+	}
+	return ""
+}
+
+func convertLOWER(args []string) string {
+	if len(args) == 1 {
+		return "strings.ToLower(" + convertExpr(args[0]) + ")"
+	}
+	return ""
+}
+
+func convertLEFT(args []string) string {
+	if len(args) == 2 {
+		return fmt.Sprintf("%s[:%s]", convertExpr(args[0]), convertExpr(args[1]))
+	}
+	return ""
+}
+
+func convertRIGHT(args []string) string {
+	if len(args) == 2 {
+		val := convertExpr(args[0])
+		n := convertExpr(args[1])
+		return fmt.Sprintf("%s[len(%s)-%s:]", val, val, n)
+	}
+	return ""
+}
+
+func convertMID(args []string) string {
+	if len(args) == 3 {
+		val := convertExpr(args[0])
+		start := convertExpr(args[1])
+		length := convertExpr(args[2])
+		return fmt.Sprintf("%s[%s-1:%s-1+%s]", val, start, start, length)
+	}
+	return ""
+}
+
+func convertMOD(args []string) string {
+	if len(args) == 2 {
+		return fmt.Sprintf("math.Mod(%s, %s)", convertExpr(args[0]), convertExpr(args[1]))
+	}
+	return ""
+}
+
+func convertPOWER(args []string) string {
+	if len(args) == 2 {
+		return fmt.Sprintf("math.Pow(%s, %s)", convertExpr(args[0]), convertExpr(args[1]))
+	}
+	return ""
+}
+
+func convertSQRT(args []string) string {
+	if len(args) == 1 {
+		return fmt.Sprintf("math.Sqrt(%s)", convertExpr(args[0]))
+	}
+	return ""
+}
+
+func convertAVERAGE(args []string) string {
+	parts := convertAllArgs(args)
+	return fmt.Sprintf("((%s) / %d)", strings.Join(parts, " + "), len(parts))
 }
 
 func convertSumRangeToGo(arg string) string {

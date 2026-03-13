@@ -308,103 +308,69 @@ func parseContentXML(f *File, data []byte) error {
 	}
 
 	for _, xmlTbl := range content.Body.Spreadsheet.Tables {
-		s := &sheet{
-			name:    xmlTbl.Name,
-			rows:    make(map[int]*row),
-			columns: make([]column, 0),
-		}
-
-		if xmlTbl.PrintRange != "" {
-			_, sc, sr, ec, er, err := parseODSRangeAddress(xmlTbl.PrintRange)
-			if err == nil {
-				s.printRange = &printRange{
-					startCol: sc, startRow: sr,
-					endCol: ec, endRow: er,
-				}
-			}
-		}
-
-		for _, xmlCol := range xmlTbl.Columns {
-			count := xmlCol.NumberColumnsRepeated
-			if count < 1 {
-				count = 1
-			}
-			for range count {
-				s.columns = append(s.columns, column{})
-			}
-		}
-
-		rowIdx := 1
-		for _, xmlRow := range xmlTbl.Rows {
-			rowRepeat := xmlRow.NumberRowsRepeated
-			if rowRepeat < 1 {
-				rowRepeat = 1
-			}
-
-			if rowRepeat > 1000 && isEmptyRow(xmlRow.Cells) {
-				rowIdx += rowRepeat
-				continue
-			}
-
-			for range rowRepeat {
-				colIdx := 1
-				hasData := false
-
-				for _, xmlCell := range xmlRow.Cells {
-					colRepeat := xmlCell.NumberColumnsRepeated
-					if colRepeat < 1 {
-						colRepeat = 1
-					}
-
-					c := convertXMLCell(&xmlCell)
-					if c != nil {
-						hasData = true
-						for rep := range colRepeat {
-							r := s.getOrCreateRow(rowIdx)
-							newCell := &cell{
-								valueType:      c.valueType,
-								rawValue:       c.rawValue,
-								formula:        c.formula,
-								styleID:        c.styleID,
-								colSpan:        c.colSpan,
-								rowSpan:        c.rowSpan,
-								hyperlink:      c.hyperlink,
-								comment:        c.comment,
-								styleName:      c.styleName,
-								validationName: c.validationName,
-							}
-							r.cells[colIdx+rep] = newCell
-							if colIdx+rep > s.maxCol {
-								s.maxCol = colIdx + rep
-							}
-						}
-					}
-					colIdx += colRepeat
-				}
-
-				if hasData {
-					if rowIdx > s.maxRow {
-						s.maxRow = rowIdx
-					}
-				}
-				rowIdx++
-			}
-		}
-
-		for _, v := range content.Body.Spreadsheet.ContentValidations.Validations {
-			if _, ok := validationMap[v.Name]; ok {
-				dv := parseXMLValidation(&v)
-				s.validations = append(s.validations, &dataValidation{
-					name:       v.Name,
-					validation: dv,
-				})
-			}
-		}
-
+		s := parseXMLTable(&xmlTbl, validationMap, content.Body.Spreadsheet.ContentValidations.Validations)
 		f.sheets = append(f.sheets, s)
 	}
 
-	for _, nr := range content.Body.Spreadsheet.NamedExpressions.NamedRanges {
+	parseNamedRanges(f, content.Body.Spreadsheet.NamedExpressions.NamedRanges)
+	parseAutoFilters(f, content.Body.Spreadsheet.DatabaseRanges.Ranges)
+
+	if len(f.sheets) == 0 {
+		s := &sheet{
+			name:    "Sheet1",
+			rows:    make(map[int]*row),
+			columns: make([]column, 0),
+		}
+		f.sheets = append(f.sheets, s)
+	}
+
+	return nil
+}
+
+func parseXMLTable(xmlTbl *xmlTable, validationMap map[string]*xmlContentValidation, validations []xmlContentValidation) *sheet {
+	s := &sheet{
+		name:    xmlTbl.Name,
+		rows:    make(map[int]*row),
+		columns: make([]column, 0),
+	}
+
+	if xmlTbl.PrintRange != "" {
+		_, sc, sr, ec, er, err := parseODSRangeAddress(xmlTbl.PrintRange)
+		if err == nil {
+			s.printRange = &printRange{
+				startCol: sc, startRow: sr,
+				endCol: ec, endRow: er,
+			}
+		}
+	}
+
+	for _, xmlCol := range xmlTbl.Columns {
+		count := xmlCol.NumberColumnsRepeated
+		if count < 1 {
+			count = 1
+		}
+		for range count {
+			s.columns = append(s.columns, column{})
+		}
+	}
+
+	parseXMLRows(s, xmlTbl.Rows)
+
+	for _, v := range validations {
+		if _, ok := validationMap[v.Name]; ok {
+			dv := parseXMLValidation(&v)
+			s.validations = append(s.validations, &dataValidation{
+				name:       v.Name,
+				validation: dv,
+			})
+		}
+	}
+
+	return s
+}
+
+func parseNamedRanges(f *File, xmlRanges []xmlNamedRange) {
+	for _, nr := range xmlRanges {
 		sheet, sc, sr, ec, er, err := parseODSRangeAddress(nr.CellRangeAddress)
 		if err != nil {
 			continue
@@ -415,8 +381,10 @@ func parseContentXML(f *File, data []byte) error {
 			endCol: ec, endRow: er,
 		})
 	}
+}
 
-	for _, dr := range content.Body.Spreadsheet.DatabaseRanges.Ranges {
+func parseAutoFilters(f *File, xmlRanges []xmlDatabaseRange) {
+	for _, dr := range xmlRanges {
 		if dr.DisplayFilterButtons != "true" {
 			continue
 		}
@@ -429,17 +397,70 @@ func parseContentXML(f *File, data []byte) error {
 			endCol: ec, endRow: er,
 		})
 	}
+}
 
-	if len(f.sheets) == 0 {
-		s := &sheet{
-			name:    "Sheet1",
-			rows:    make(map[int]*row),
-			columns: make([]column, 0),
+func parseXMLRows(s *sheet, xmlRows []xmlTableRow) {
+	rowIdx := 1
+	for _, xmlRow := range xmlRows {
+		rowRepeat := xmlRow.NumberRowsRepeated
+		if rowRepeat < 1 {
+			rowRepeat = 1
 		}
-		f.sheets = append(f.sheets, s)
+
+		if rowRepeat > 1000 && isEmptyRow(xmlRow.Cells) {
+			rowIdx += rowRepeat
+			continue
+		}
+
+		for range rowRepeat {
+			hasData := parseXMLRowCells(s, rowIdx, xmlRow.Cells)
+			if hasData {
+				if rowIdx > s.maxRow {
+					s.maxRow = rowIdx
+				}
+			}
+			rowIdx++
+		}
+	}
+}
+
+func parseXMLRowCells(s *sheet, rowIdx int, xmlCells []xmlTableCell) bool {
+	colIdx := 1
+	hasData := false
+
+	for _, xmlCell := range xmlCells {
+		colRepeat := xmlCell.NumberColumnsRepeated
+		if colRepeat < 1 {
+			colRepeat = 1
+		}
+
+		c := convertXMLCell(&xmlCell)
+		if c != nil {
+			hasData = true
+			for rep := range colRepeat {
+				r := s.getOrCreateRow(rowIdx)
+				newCell := &cell{
+					valueType:      c.valueType,
+					rawValue:       c.rawValue,
+					formula:        c.formula,
+					styleID:        c.styleID,
+					colSpan:        c.colSpan,
+					rowSpan:        c.rowSpan,
+					hyperlink:      c.hyperlink,
+					comment:        c.comment,
+					styleName:      c.styleName,
+					validationName: c.validationName,
+				}
+				r.cells[colIdx+rep] = newCell
+				if colIdx+rep > s.maxCol {
+					s.maxCol = colIdx + rep
+				}
+			}
+		}
+		colIdx += colRepeat
 	}
 
-	return nil
+	return hasData
 }
 
 func parseXMLValidation(v *xmlContentValidation) *DataValidation {
@@ -482,6 +503,31 @@ func isEmptyRow(cells []xmlTableCell) bool {
 	return true
 }
 
+func parseXMLCellTextValue(xc *xmlTableCell) (string, *Hyperlink) {
+	texts := make([]string, 0, len(xc.Paragraphs))
+	var hl *Hyperlink
+	for _, p := range xc.Paragraphs {
+		if len(p.Links) > 0 {
+			for _, link := range p.Links {
+				if link.Href != "" {
+					hl = &Hyperlink{
+						URL:     link.Href,
+						Display: link.Text,
+					}
+					texts = append(texts, link.Text)
+					break
+				}
+			}
+		} else {
+			texts = append(texts, p.Text)
+		}
+	}
+	if len(texts) > 0 {
+		return strings.Join(texts, "\n"), hl
+	}
+	return "", hl
+}
+
 func convertXMLCell(xc *xmlTableCell) *cell {
 	hasAnnotation := len(xc.Annotations) > 0
 	hasValidation := xc.ContentValidationName != ""
@@ -512,6 +558,17 @@ func convertXMLCell(xc *xmlTableCell) *cell {
 		}
 	}
 
+	parseXMLCellValue(xc, c)
+
+	if xc.Formula != "" {
+		c.formula = strings.TrimPrefix(xc.Formula, "of:=")
+		c.formula = strings.TrimPrefix(c.formula, "of:")
+	}
+
+	return c
+}
+
+func parseXMLCellValue(xc *xmlTableCell, c *cell) {
 	switch xc.ValueType {
 	case "float", "currency", "percentage":
 		c.rawValue = xc.Value
@@ -520,37 +577,17 @@ func convertXMLCell(xc *xmlTableCell) *cell {
 	case "boolean":
 		c.rawValue = xc.BooleanValue
 	case "string", "":
-		texts := make([]string, 0, len(xc.Paragraphs))
-		for _, p := range xc.Paragraphs {
-			if len(p.Links) > 0 {
-				for _, link := range p.Links {
-					if link.Href != "" {
-						c.hyperlink = &Hyperlink{
-							URL:     link.Href,
-							Display: link.Text,
-						}
-						texts = append(texts, link.Text)
-						break
-					}
-				}
-			} else {
-				texts = append(texts, p.Text)
-			}
+		text, link := parseXMLCellTextValue(xc)
+		if link != nil {
+			c.hyperlink = link
 		}
-		if len(texts) > 0 {
-			c.rawValue = strings.Join(texts, "\n")
+		if text != "" {
+			c.rawValue = text
 			if xc.ValueType == "" {
 				c.valueType = CellTypeString
 			}
 		}
 	}
-
-	if xc.Formula != "" {
-		c.formula = strings.TrimPrefix(xc.Formula, "of:=")
-		c.formula = strings.TrimPrefix(c.formula, "of:")
-	}
-
-	return c
 }
 
 func parseMetaXML(f *File, data []byte) {
@@ -635,6 +672,59 @@ func parseSettingsXML(f *File, data []byte) {
 	}
 }
 
+func marshalSettingsHeader(xw *oxml.Writer) error {
+	rootAttrs := []xml.Attr{
+		oxml.NSAttr("office"),
+		oxml.NSAttr("config"),
+		oxml.Attr("office", "version", "1.2"),
+	}
+
+	if err := xw.StartElement("office", "document-settings", rootAttrs...); err != nil {
+		return err
+	}
+	if err := xw.StartElement("office", "settings"); err != nil {
+		return err
+	}
+	if err := xw.StartElement("config", "config-item-set",
+		oxml.Attr("config", "name", "ooo:view-settings"),
+	); err != nil {
+		return err
+	}
+	if err := xw.StartElement("config", "config-item-map-named",
+		oxml.Attr("config", "name", "Views"),
+	); err != nil {
+		return err
+	}
+	if err := xw.StartElement("config", "config-item-map-entry"); err != nil {
+		return err
+	}
+	if err := writeConfigItem(xw, "ViewId", "string", "view1"); err != nil {
+		return err
+	}
+	return xw.StartElement("config", "config-item-map-named",
+		oxml.Attr("config", "name", "Tables"),
+	)
+}
+
+func marshalSettingsFooter(xw *oxml.Writer) error {
+	if err := xw.EndElement("config", "config-item-map-named"); err != nil {
+		return err
+	}
+	if err := xw.EndElement("config", "config-item-map-entry"); err != nil {
+		return err
+	}
+	if err := xw.EndElement("config", "config-item-map-named"); err != nil {
+		return err
+	}
+	if err := xw.EndElement("config", "config-item-set"); err != nil {
+		return err
+	}
+	if err := xw.EndElement("office", "settings"); err != nil {
+		return err
+	}
+	return xw.EndElement("office", "document-settings")
+}
+
 func (f *File) marshalSettings() ([]byte, error) {
 	hasFreezeSettings := false
 	for _, s := range f.sheets {
@@ -651,42 +741,7 @@ func (f *File) marshalSettings() ([]byte, error) {
 	buf.WriteString(xml.Header)
 	xw := oxml.NewWriter(&buf)
 
-	rootAttrs := []xml.Attr{
-		oxml.NSAttr("office"),
-		oxml.NSAttr("config"),
-		oxml.Attr("office", "version", "1.2"),
-	}
-
-	if err := xw.StartElement("office", "document-settings", rootAttrs...); err != nil {
-		return nil, err
-	}
-	if err := xw.StartElement("office", "settings"); err != nil {
-		return nil, err
-	}
-
-	if err := xw.StartElement("config", "config-item-set",
-		oxml.Attr("config", "name", "ooo:view-settings"),
-	); err != nil {
-		return nil, err
-	}
-
-	if err := xw.StartElement("config", "config-item-map-named",
-		oxml.Attr("config", "name", "Views"),
-	); err != nil {
-		return nil, err
-	}
-
-	if err := xw.StartElement("config", "config-item-map-entry"); err != nil {
-		return nil, err
-	}
-
-	if err := writeConfigItem(xw, "ViewId", "string", "view1"); err != nil {
-		return nil, err
-	}
-
-	if err := xw.StartElement("config", "config-item-map-named",
-		oxml.Attr("config", "name", "Tables"),
-	); err != nil {
+	if err := marshalSettingsHeader(xw); err != nil {
 		return nil, err
 	}
 
@@ -701,65 +756,16 @@ func (f *File) marshalSettings() ([]byte, error) {
 			return nil, err
 		}
 
-		if s.freezeCol > 0 {
-			if err := writeConfigItem(xw, "HorizontalSplitMode", "short", "2"); err != nil {
-				return nil, err
-			}
-			if err := writeConfigItem(xw, "HorizontalSplitPosition", "int", fmt.Sprintf("%d", s.freezeCol)); err != nil {
-				return nil, err
-			}
-		}
-		if s.freezeRow > 0 {
-			if err := writeConfigItem(xw, "VerticalSplitMode", "short", "2"); err != nil {
-				return nil, err
-			}
-			if err := writeConfigItem(xw, "VerticalSplitPosition", "int", fmt.Sprintf("%d", s.freezeRow)); err != nil {
-				return nil, err
-			}
-		}
-
-		posRight := 0
-		if s.freezeCol > 0 {
-			posRight = 1
-		}
-		posBottom := 0
-		if s.freezeRow > 0 {
-			posBottom = 1
-		}
-		activeSplit := posRight | (posBottom << 1)
-		if activeSplit == 0 {
-			activeSplit = 2
-		}
-		if err := writeConfigItem(xw, "PositionRight", "int", fmt.Sprintf("%d", s.freezeCol)); err != nil {
+		if err := marshalSheetFreezeSettings(xw, s); err != nil {
 			return nil, err
 		}
-		if err := writeConfigItem(xw, "PositionBottom", "int", fmt.Sprintf("%d", s.freezeRow)); err != nil {
-			return nil, err
-		}
-
-		_ = activeSplit
 
 		if err := xw.EndElement("config", "config-item-map-entry"); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := xw.EndElement("config", "config-item-map-named"); err != nil {
-		return nil, err
-	}
-	if err := xw.EndElement("config", "config-item-map-entry"); err != nil {
-		return nil, err
-	}
-	if err := xw.EndElement("config", "config-item-map-named"); err != nil {
-		return nil, err
-	}
-	if err := xw.EndElement("config", "config-item-set"); err != nil {
-		return nil, err
-	}
-	if err := xw.EndElement("office", "settings"); err != nil {
-		return nil, err
-	}
-	if err := xw.EndElement("office", "document-settings"); err != nil {
+	if err := marshalSettingsFooter(xw); err != nil {
 		return nil, err
 	}
 
@@ -768,6 +774,44 @@ func (f *File) marshalSettings() ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func marshalSheetFreezeSettings(xw *oxml.Writer, s *sheet) error {
+	if s.freezeCol > 0 {
+		if err := writeConfigItem(xw, "HorizontalSplitMode", "short", "2"); err != nil {
+			return err
+		}
+		if err := writeConfigItem(xw, "HorizontalSplitPosition", "int", fmt.Sprintf("%d", s.freezeCol)); err != nil {
+			return err
+		}
+	}
+	if s.freezeRow > 0 {
+		if err := writeConfigItem(xw, "VerticalSplitMode", "short", "2"); err != nil {
+			return err
+		}
+		if err := writeConfigItem(xw, "VerticalSplitPosition", "int", fmt.Sprintf("%d", s.freezeRow)); err != nil {
+			return err
+		}
+	}
+
+	posRight := 0
+	if s.freezeCol > 0 {
+		posRight = 1
+	}
+	posBottom := 0
+	if s.freezeRow > 0 {
+		posBottom = 1
+	}
+	activeSplit := posRight | (posBottom << 1)
+	if activeSplit == 0 {
+		activeSplit = 2
+	}
+	_ = activeSplit
+
+	if err := writeConfigItem(xw, "PositionRight", "int", fmt.Sprintf("%d", s.freezeCol)); err != nil {
+		return err
+	}
+	return writeConfigItem(xw, "PositionBottom", "int", fmt.Sprintf("%d", s.freezeRow))
 }
 
 func writeConfigItem(xw *oxml.Writer, name, typ, value string) error {
@@ -833,99 +877,8 @@ func (f *File) buildContentXML() (*oxml.DocumentContent, []oxml.Style, []oxml.Co
 	}
 
 	for _, s := range f.sheets {
-		table := oxml.Table{
-			Name: s.name,
-		}
-
-		if s.printRange != nil {
-			table.PrintRanges = formatODSRangeAddress(s.name, s.printRange.startCol, s.printRange.startRow, s.printRange.endCol, s.printRange.endRow)
-		}
-
-		for _, dv := range s.validations {
-			cv := oxml.ContentValidation{
-				Name:       dv.name,
-				Condition:  buildValidationCondition(dv.validation),
-				AllowEmpty: dv.validation.AllowEmpty,
-			}
-			if dv.validation.ErrorMessage != "" || dv.validation.ErrorTitle != "" {
-				cv.ErrorMessage = &oxml.ErrorMessage{
-					Display:     true,
-					MessageType: dv.validation.ErrorStyle,
-					Title:       dv.validation.ErrorTitle,
-					Text:        dv.validation.ErrorMessage,
-				}
-			}
-			if dv.validation.InputMessage != "" || dv.validation.InputTitle != "" {
-				cv.HelpMessage = &oxml.HelpMessage{
-					Display: true,
-					Title:   dv.validation.InputTitle,
-					Text:    dv.validation.InputMessage,
-				}
-			}
-			allValidations = append(allValidations, cv)
-		}
-
-		colCount := s.maxCol
-		if len(s.columns) > colCount {
-			colCount = len(s.columns)
-		}
-		if colCount < 1 {
-			colCount = 1
-		}
-
-		for i := range colCount {
-			col := oxml.TableColumn{}
-			if i < len(s.columns) && s.columns[i].width > 0 {
-				styleName := fmt.Sprintf("co%d", len(autoStyles)+1)
-				autoStyles = append(autoStyles, oxml.Style{
-					Name:   styleName,
-					Family: "table-column",
-					TableColumnProperties: &oxml.TableColumnProperties{
-						ColumnWidth: fmt.Sprintf("%.4fcm", s.columns[i].width),
-					},
-				})
-				col.StyleName = styleName
-			}
-			table.Columns = append(table.Columns, col)
-		}
-
-		maxRow := s.maxRow
-		if maxRow < 1 {
-			maxRow = 1
-		}
-
-		for rowIdx := 1; rowIdx <= maxRow; rowIdx++ {
-			r, exists := s.rows[rowIdx]
-			xmlRow := oxml.TableRow{}
-
-			if exists && r.height > 0 {
-				styleName := fmt.Sprintf("ro%d", len(autoStyles)+1)
-				autoStyles = append(autoStyles, oxml.Style{
-					Name:   styleName,
-					Family: "table-row",
-					TableRowProperties: &oxml.TableRowProperties{
-						RowHeight:        fmt.Sprintf("%.4fcm", r.height),
-						UseOptimalHeight: "false",
-					},
-				})
-				xmlRow.StyleName = styleName
-			}
-
-			for colIdx := 1; colIdx <= colCount; colIdx++ {
-				xmlCell := oxml.TableCell{}
-
-				if exists {
-					if c, ok := r.cells[colIdx]; ok {
-						xmlCell = buildXMLCell(c, f.styles, &autoStyles)
-					}
-				}
-
-				xmlRow.Cells = append(xmlRow.Cells, xmlCell)
-			}
-
-			table.Rows = append(table.Rows, xmlRow)
-		}
-
+		table := buildSheetTable(s, f.styles, &autoStyles)
+		allValidations = append(allValidations, buildSheetValidations(s)...)
 		doc.Body.Spreadsheet.Tables = append(doc.Body.Spreadsheet.Tables, table)
 	}
 
@@ -943,6 +896,107 @@ func (f *File) buildContentXML() (*oxml.DocumentContent, []oxml.Style, []oxml.Co
 	}
 
 	return doc, autoStyles, allValidations, allNamedRanges, allDatabaseRanges
+}
+
+func buildSheetValidations(s *sheet) []oxml.ContentValidation {
+	var validations []oxml.ContentValidation
+	for _, dv := range s.validations {
+		cv := oxml.ContentValidation{
+			Name:       dv.name,
+			Condition:  buildValidationCondition(dv.validation),
+			AllowEmpty: dv.validation.AllowEmpty,
+		}
+		if dv.validation.ErrorMessage != "" || dv.validation.ErrorTitle != "" {
+			cv.ErrorMessage = &oxml.ErrorMessage{
+				Display:     true,
+				MessageType: dv.validation.ErrorStyle,
+				Title:       dv.validation.ErrorTitle,
+				Text:        dv.validation.ErrorMessage,
+			}
+		}
+		if dv.validation.InputMessage != "" || dv.validation.InputTitle != "" {
+			cv.HelpMessage = &oxml.HelpMessage{
+				Display: true,
+				Title:   dv.validation.InputTitle,
+				Text:    dv.validation.InputMessage,
+			}
+		}
+		validations = append(validations, cv)
+	}
+	return validations
+}
+
+func buildSheetTable(s *sheet, sm *styleManager, autoStyles *[]oxml.Style) oxml.Table {
+	table := oxml.Table{
+		Name: s.name,
+	}
+
+	if s.printRange != nil {
+		table.PrintRanges = formatODSRangeAddress(s.name, s.printRange.startCol, s.printRange.startRow, s.printRange.endCol, s.printRange.endRow)
+	}
+
+	colCount := s.maxCol
+	if len(s.columns) > colCount {
+		colCount = len(s.columns)
+	}
+	if colCount < 1 {
+		colCount = 1
+	}
+
+	for i := range colCount {
+		col := oxml.TableColumn{}
+		if i < len(s.columns) && s.columns[i].width > 0 {
+			styleName := fmt.Sprintf("co%d", len(*autoStyles)+1)
+			*autoStyles = append(*autoStyles, oxml.Style{
+				Name:   styleName,
+				Family: "table-column",
+				TableColumnProperties: &oxml.TableColumnProperties{
+					ColumnWidth: fmt.Sprintf("%.4fcm", s.columns[i].width),
+				},
+			})
+			col.StyleName = styleName
+		}
+		table.Columns = append(table.Columns, col)
+	}
+
+	maxRow := s.maxRow
+	if maxRow < 1 {
+		maxRow = 1
+	}
+
+	for rowIdx := 1; rowIdx <= maxRow; rowIdx++ {
+		r, exists := s.rows[rowIdx]
+		xmlRow := oxml.TableRow{}
+
+		if exists && r.height > 0 {
+			styleName := fmt.Sprintf("ro%d", len(*autoStyles)+1)
+			*autoStyles = append(*autoStyles, oxml.Style{
+				Name:   styleName,
+				Family: "table-row",
+				TableRowProperties: &oxml.TableRowProperties{
+					RowHeight:        fmt.Sprintf("%.4fcm", r.height),
+					UseOptimalHeight: "false",
+				},
+			})
+			xmlRow.StyleName = styleName
+		}
+
+		for colIdx := 1; colIdx <= colCount; colIdx++ {
+			xmlCell := oxml.TableCell{}
+
+			if exists {
+				if c, ok := r.cells[colIdx]; ok {
+					xmlCell = buildXMLCell(c, sm, autoStyles)
+				}
+			}
+
+			xmlRow.Cells = append(xmlRow.Cells, xmlCell)
+		}
+
+		table.Rows = append(table.Rows, xmlRow)
+	}
+
+	return table
 }
 
 func buildXMLCell(c *cell, sm *styleManager, autoStyles *[]oxml.Style) oxml.TableCell {

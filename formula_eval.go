@@ -163,22 +163,28 @@ func (p *formulaParser) parseAddSub() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		lf, lok := toFloat(left)
-		rf, rok := toFloat(right)
-		if lok && rok {
-			if ch == '+' {
-				left = lf + rf
-			} else {
-				left = lf - rf
-			}
-		} else if ch == '+' {
-			left = fmt.Sprintf("%v%v", left, right)
-		} else {
-			return nil, fmt.Errorf("cannot subtract non-numeric values")
+		left, err = applyAddSub(left, right, ch)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	return left, nil
+}
+
+func applyAddSub(left, right interface{}, op byte) (interface{}, error) {
+	lf, lok := toFloat(left)
+	rf, rok := toFloat(right)
+	if lok && rok {
+		if op == '+' {
+			return lf + rf, nil
+		}
+		return lf - rf, nil
+	}
+	if op == '+' {
+		return fmt.Sprintf("%v%v", left, right), nil
+	}
+	return nil, fmt.Errorf("cannot subtract non-numeric values")
 }
 
 func (p *formulaParser) parseMulDiv() (interface{}, error) {
@@ -304,22 +310,26 @@ func (p *formulaParser) parseNumberLiteral() (interface{}, error) {
 	return val, nil
 }
 
+func (p *formulaParser) parseSheetFromBracket() string {
+	if p.pos < len(p.input) && p.input[p.pos] == '.' {
+		p.pos++
+		return ""
+	}
+	nameStart := p.pos
+	for p.pos < len(p.input) && p.input[p.pos] != '.' && p.input[p.pos] != ']' {
+		p.pos++
+	}
+	sheetName := p.input[nameStart:p.pos]
+	if p.pos < len(p.input) && p.input[p.pos] == '.' {
+		p.pos++
+	}
+	return sheetName
+}
+
 func (p *formulaParser) parseCellReference() (interface{}, error) {
 	p.pos++
 
-	sheetName := ""
-	if p.pos < len(p.input) && p.input[p.pos] == '.' {
-		p.pos++
-	} else {
-		nameStart := p.pos
-		for p.pos < len(p.input) && p.input[p.pos] != '.' && p.input[p.pos] != ']' {
-			p.pos++
-		}
-		sheetName = p.input[nameStart:p.pos]
-		if p.pos < len(p.input) && p.input[p.pos] == '.' {
-			p.pos++
-		}
-	}
+	sheetName := p.parseSheetFromBracket()
 
 	start := p.pos
 	for p.pos < len(p.input) && p.input[p.pos] != ']' && p.input[p.pos] != ':' {
@@ -465,6 +475,15 @@ func (p *formulaParser) parseFunctionCall() (interface{}, error) {
 		return p.parseIFERROR()
 	}
 
+	args, err := p.parseFunctionArgs()
+	if err != nil {
+		return nil, err
+	}
+
+	return evalFunction(name, args)
+}
+
+func (p *formulaParser) parseFunctionArgs() ([]interface{}, error) {
 	var args []interface{}
 	for {
 		p.skipSpaces()
@@ -489,8 +508,7 @@ func (p *formulaParser) parseFunctionCall() (interface{}, error) {
 			break
 		}
 	}
-
-	return evalFunction(name, args)
+	return args, nil
 }
 
 func (p *formulaParser) parseIFERROR() (interface{}, error) {
@@ -534,37 +552,49 @@ func flattenArg(a interface{}) []interface{} {
 	return nil
 }
 
-func matchesCriteria(val interface{}, criteria string) bool {
+func parseCriteriaOperator(criteria string) (string, string) {
 	if len(criteria) >= 2 {
-		if strings.HasPrefix(criteria, ">=") {
-			f, ok := toFloat(val)
-			cf, cok := strconv.ParseFloat(criteria[2:], 64)
-			return ok && cok == nil && f >= cf
-		}
-		if strings.HasPrefix(criteria, "<=") {
-			f, ok := toFloat(val)
-			cf, cok := strconv.ParseFloat(criteria[2:], 64)
-			return ok && cok == nil && f <= cf
-		}
-		if strings.HasPrefix(criteria, "<>") {
-			return fmt.Sprintf("%v", val) != criteria[2:]
+		switch criteria[:2] {
+		case ">=", "<=", "<>":
+			return criteria[:2], criteria[2:]
 		}
 	}
 	if len(criteria) >= 1 {
-		if criteria[0] == '>' {
-			f, ok := toFloat(val)
-			cf, cok := strconv.ParseFloat(criteria[1:], 64)
-			return ok && cok == nil && f > cf
-		}
-		if criteria[0] == '<' {
-			f, ok := toFloat(val)
-			cf, cok := strconv.ParseFloat(criteria[1:], 64)
-			return ok && cok == nil && f < cf
-		}
-		if criteria[0] == '=' {
-			return fmt.Sprintf("%v", val) == criteria[1:]
+		switch criteria[0] {
+		case '>', '<', '=':
+			return string(criteria[0]), criteria[1:]
 		}
 	}
+	return "", criteria
+}
+
+func matchesCriteria(val interface{}, criteria string) bool {
+	op, value := parseCriteriaOperator(criteria)
+
+	if op == "<>" {
+		return fmt.Sprintf("%v", val) != value
+	}
+	if op == "=" {
+		return fmt.Sprintf("%v", val) == value
+	}
+	if op != "" {
+		f, ok := toFloat(val)
+		cf, cok := strconv.ParseFloat(value, 64)
+		if !ok || cok != nil {
+			return false
+		}
+		switch op {
+		case ">=":
+			return f >= cf
+		case "<=":
+			return f <= cf
+		case ">":
+			return f > cf
+		case "<":
+			return f < cf
+		}
+	}
+
 	if cf, err := strconv.ParseFloat(criteria, 64); err == nil {
 		f, ok := toFloat(val)
 		return ok && f == cf
@@ -572,840 +602,916 @@ func matchesCriteria(val interface{}, criteria string) bool {
 	return strings.EqualFold(fmt.Sprintf("%v", val), criteria)
 }
 
+type formulaFunc func([]interface{}) (interface{}, error)
+
+var formulaFunctions = map[string]formulaFunc{
+	"IF":          evalIF,
+	"AND":         evalAND,
+	"OR":          evalOR,
+	"NOT":         evalNOT,
+	"SUM":         evalSUM,
+	"AVERAGE":     evalAVERAGE,
+	"COUNT":       evalCOUNT,
+	"ABS":         evalABS,
+	"MIN":         evalMIN,
+	"MAX":         evalMAX,
+	"ROUND":       evalROUND,
+	"FLOOR":       evalFLOOR,
+	"CEIL":        evalCEILING,
+	"CEILING":     evalCEILING,
+	"CONCATENATE": evalCONCATENATE,
+	"LEN":         evalLEN,
+	"TRIM":        evalTRIM,
+	"UPPER":       evalUPPER,
+	"LOWER":       evalLOWER,
+	"LEFT":        evalLEFT,
+	"RIGHT":       evalRIGHT,
+	"MID":         evalMID,
+	"MOD":         evalMOD,
+	"POWER":       evalPOWER,
+	"SQRT":        evalSQRT,
+	"INT":         evalINT,
+	"COUNTA":      evalCOUNTA,
+	"SUMIF":       evalSUMIF,
+	"COUNTIF":     evalCOUNTIF,
+	"COUNTIFS":    evalCOUNTIFS,
+	"SUMIFS":      evalSUMIFS,
+	"VLOOKUP":     evalVLOOKUP,
+	"HLOOKUP":     evalHLOOKUP,
+	"INDEX":       evalINDEX,
+	"MATCH":       evalMATCH,
+	"DATE":        evalDATE,
+	"TODAY":       evalTODAY,
+	"NOW":         evalNOW,
+	"YEAR":        evalYEAR,
+	"MONTH":       evalMONTH,
+	"DAY":         evalDAY,
+	"FIND":        evalFIND,
+	"SEARCH":      evalSEARCH,
+	"SUBSTITUTE":  evalSUBSTITUTE,
+	"REPLACE":     evalREPLACE,
+	"TEXT":        evalTEXT,
+	"VALUE":       evalVALUE,
+	"SUMPRODUCT":  evalSUMPRODUCT,
+}
+
 func evalFunction(name string, args []interface{}) (interface{}, error) {
-	switch name {
-	case "IF":
-		if len(args) < 2 {
-			return nil, fmt.Errorf("IF requires at least 2 arguments")
-		}
-		if toBool(args[0]) {
-			return args[1], nil
-		}
-		if len(args) >= 3 {
-			return args[2], nil
-		}
-		return false, nil
+	if fn, ok := formulaFunctions[name]; ok {
+		return fn(args)
+	}
+	return nil, fmt.Errorf("unknown function: %s", name)
+}
 
-	case "AND":
-		for _, a := range args {
-			if !toBool(a) {
-				return false, nil
-			}
-		}
-		return true, nil
+func evalIF(args []interface{}) (interface{}, error) {
+	if len(args) < 2 {
+		return nil, fmt.Errorf("IF requires at least 2 arguments")
+	}
+	if toBool(args[0]) {
+		return args[1], nil
+	}
+	if len(args) >= 3 {
+		return args[2], nil
+	}
+	return false, nil
+}
 
-	case "OR":
-		for _, a := range args {
-			if toBool(a) {
-				return true, nil
-			}
+func evalAND(args []interface{}) (interface{}, error) {
+	for _, a := range args {
+		if !toBool(a) {
+			return false, nil
 		}
-		return false, nil
+	}
+	return true, nil
+}
 
-	case "NOT":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("NOT requires 1 argument")
+func evalOR(args []interface{}) (interface{}, error) {
+	for _, a := range args {
+		if toBool(a) {
+			return true, nil
 		}
-		return !toBool(args[0]), nil
+	}
+	return false, nil
+}
 
-	case "SUM":
-		sum := 0.0
-		for _, a := range args {
-			if vals := flattenArg(a); vals != nil {
-				for _, v := range vals {
-					if f, ok := toFloat(v); ok {
-						sum += f
-					}
+func evalNOT(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("NOT requires 1 argument")
+	}
+	return !toBool(args[0]), nil
+}
+
+func evalSUM(args []interface{}) (interface{}, error) {
+	sum := 0.0
+	for _, a := range args {
+		if vals := flattenArg(a); vals != nil {
+			for _, v := range vals {
+				if f, ok := toFloat(v); ok {
+					sum += f
 				}
-			} else if f, ok := toFloat(a); ok {
+			}
+		} else if f, ok := toFloat(a); ok {
+			sum += f
+		}
+	}
+	return sum, nil
+}
+
+func evalAVERAGE(args []interface{}) (interface{}, error) {
+	sum := 0.0
+	count := 0
+	for _, a := range args {
+		if vals := flattenArg(a); vals != nil {
+			for _, v := range vals {
+				if isEmptyValue(v) {
+					continue
+				}
+				if f, ok := toFloat(v); ok {
+					sum += f
+					count++
+				}
+			}
+		} else {
+			if isEmptyValue(a) {
+				continue
+			}
+			if f, ok := toFloat(a); ok {
 				sum += f
-			}
-		}
-		return sum, nil
-
-	case "AVERAGE":
-		sum := 0.0
-		count := 0
-		for _, a := range args {
-			if vals := flattenArg(a); vals != nil {
-				for _, v := range vals {
-					if isEmptyValue(v) {
-						continue
-					}
-					if f, ok := toFloat(v); ok {
-						sum += f
-						count++
-					}
-				}
-			} else {
-				if isEmptyValue(a) {
-					continue
-				}
-				if f, ok := toFloat(a); ok {
-					sum += f
-					count++
-				}
-			}
-		}
-		if count == 0 {
-			return nil, fmt.Errorf("AVERAGE: no numeric values")
-		}
-		return sum / float64(count), nil
-
-	case "COUNT":
-		count := 0
-		for _, a := range args {
-			if vals := flattenArg(a); vals != nil {
-				for _, v := range vals {
-					if isEmptyValue(v) {
-						continue
-					}
-					if _, ok := toFloat(v); ok {
-						count++
-					}
-				}
-			} else {
-				if isEmptyValue(a) {
-					continue
-				}
-				if _, ok := toFloat(a); ok {
-					count++
-				}
-			}
-		}
-		return float64(count), nil
-
-	case "ABS":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("ABS requires 1 argument")
-		}
-		if f, ok := toFloat(args[0]); ok {
-			return math.Abs(f), nil
-		}
-		return nil, fmt.Errorf("ABS requires numeric argument")
-
-	case "MIN":
-		minVal := math.Inf(1)
-		found := false
-		for _, a := range args {
-			if vals := flattenArg(a); vals != nil {
-				for _, v := range vals {
-					if f, ok := toFloat(v); ok {
-						found = true
-						if f < minVal {
-							minVal = f
-						}
-					}
-				}
-			} else if f, ok := toFloat(a); ok {
-				found = true
-				if f < minVal {
-					minVal = f
-				}
-			}
-		}
-		if !found {
-			return float64(0), nil
-		}
-		return minVal, nil
-
-	case "MAX":
-		maxVal := math.Inf(-1)
-		found := false
-		for _, a := range args {
-			if vals := flattenArg(a); vals != nil {
-				for _, v := range vals {
-					if f, ok := toFloat(v); ok {
-						found = true
-						if f > maxVal {
-							maxVal = f
-						}
-					}
-				}
-			} else if f, ok := toFloat(a); ok {
-				found = true
-				if f > maxVal {
-					maxVal = f
-				}
-			}
-		}
-		if !found {
-			return float64(0), nil
-		}
-		return maxVal, nil
-
-	case "ROUND":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("ROUND requires at least 1 argument")
-		}
-		f, ok := toFloat(args[0])
-		if !ok {
-			return nil, fmt.Errorf("ROUND requires numeric argument")
-		}
-		decimals := 0
-		if len(args) >= 2 {
-			if d, ok := toFloat(args[1]); ok {
-				decimals = int(d)
-			}
-		}
-		pow := math.Pow(10, float64(decimals))
-		return math.Round(f*pow) / pow, nil
-
-	case "FLOOR":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("FLOOR requires at least 1 argument")
-		}
-		f, ok := toFloat(args[0])
-		if !ok {
-			return nil, fmt.Errorf("FLOOR requires numeric argument")
-		}
-		return math.Floor(f), nil
-
-	case "CEIL", "CEILING":
-		if len(args) < 1 {
-			return nil, fmt.Errorf("CEILING requires at least 1 argument")
-		}
-		f, ok := toFloat(args[0])
-		if !ok {
-			return nil, fmt.Errorf("CEILING requires numeric argument")
-		}
-		return math.Ceil(f), nil
-
-	case "CONCATENATE":
-		var sb strings.Builder
-		for _, a := range args {
-			sb.WriteString(fmt.Sprintf("%v", a))
-		}
-		return sb.String(), nil
-
-	case "LEN":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("LEN requires 1 argument")
-		}
-		return float64(len(fmt.Sprintf("%v", args[0]))), nil
-
-	case "TRIM":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("TRIM requires 1 argument")
-		}
-		return strings.TrimSpace(fmt.Sprintf("%v", args[0])), nil
-
-	case "UPPER":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("UPPER requires 1 argument")
-		}
-		return strings.ToUpper(fmt.Sprintf("%v", args[0])), nil
-
-	case "LOWER":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("LOWER requires 1 argument")
-		}
-		return strings.ToLower(fmt.Sprintf("%v", args[0])), nil
-
-	case "LEFT":
-		if len(args) != 2 {
-			return nil, fmt.Errorf("LEFT requires 2 arguments")
-		}
-		s := fmt.Sprintf("%v", args[0])
-		n, ok := toFloat(args[1])
-		if !ok {
-			return nil, fmt.Errorf("LEFT requires numeric second argument")
-		}
-		idx := int(n)
-		if idx > len(s) {
-			idx = len(s)
-		}
-		return s[:idx], nil
-
-	case "RIGHT":
-		if len(args) != 2 {
-			return nil, fmt.Errorf("RIGHT requires 2 arguments")
-		}
-		s := fmt.Sprintf("%v", args[0])
-		n, ok := toFloat(args[1])
-		if !ok {
-			return nil, fmt.Errorf("RIGHT requires numeric second argument")
-		}
-		idx := int(n)
-		if idx > len(s) {
-			idx = len(s)
-		}
-		return s[len(s)-idx:], nil
-
-	case "MID":
-		if len(args) != 3 {
-			return nil, fmt.Errorf("MID requires 3 arguments")
-		}
-		s := fmt.Sprintf("%v", args[0])
-		start, ok1 := toFloat(args[1])
-		length, ok2 := toFloat(args[2])
-		if !ok1 || !ok2 {
-			return nil, fmt.Errorf("MID requires numeric arguments")
-		}
-		startIdx := int(start) - 1
-		if startIdx < 0 {
-			startIdx = 0
-		}
-		endIdx := startIdx + int(length)
-		if endIdx > len(s) {
-			endIdx = len(s)
-		}
-		if startIdx >= len(s) {
-			return "", nil
-		}
-		return s[startIdx:endIdx], nil
-
-	case "MOD":
-		if len(args) != 2 {
-			return nil, fmt.Errorf("MOD requires 2 arguments")
-		}
-		a, ok1 := toFloat(args[0])
-		b, ok2 := toFloat(args[1])
-		if !ok1 || !ok2 {
-			return nil, fmt.Errorf("MOD requires numeric arguments")
-		}
-		if b == 0 {
-			return nil, fmt.Errorf("MOD: division by zero")
-		}
-		return math.Mod(a, b), nil
-
-	case "POWER":
-		if len(args) != 2 {
-			return nil, fmt.Errorf("POWER requires 2 arguments")
-		}
-		base, ok1 := toFloat(args[0])
-		exp, ok2 := toFloat(args[1])
-		if !ok1 || !ok2 {
-			return nil, fmt.Errorf("POWER requires numeric arguments")
-		}
-		return math.Pow(base, exp), nil
-
-	case "SQRT":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("SQRT requires 1 argument")
-		}
-		f, ok := toFloat(args[0])
-		if !ok {
-			return nil, fmt.Errorf("SQRT requires numeric argument")
-		}
-		return math.Sqrt(f), nil
-
-	case "INT":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("INT requires 1 argument")
-		}
-		f, ok := toFloat(args[0])
-		if !ok {
-			return nil, fmt.Errorf("INT requires numeric argument")
-		}
-		return math.Floor(f), nil
-
-	case "COUNTA":
-		count := 0
-		for _, a := range args {
-			if vals := flattenArg(a); vals != nil {
-				for _, v := range vals {
-					if v != nil {
-						s := fmt.Sprintf("%v", v)
-						if s != "" {
-							count++
-						}
-					}
-				}
-			} else if a != nil {
-				s := fmt.Sprintf("%v", a)
-				if s != "" {
-					count++
-				}
-			}
-		}
-		return float64(count), nil
-
-	case "SUMIF":
-		if len(args) < 2 {
-			return nil, fmt.Errorf("SUMIF requires at least 2 arguments")
-		}
-		rangeVals := flattenArg(args[0])
-		if rangeVals == nil {
-			return float64(0), nil
-		}
-		criteria := fmt.Sprintf("%v", args[1])
-		sumVals := rangeVals
-		if len(args) >= 3 {
-			sumVals = flattenArg(args[2])
-			if sumVals == nil {
-				return float64(0), nil
-			}
-		}
-		sum := 0.0
-		for i, v := range rangeVals {
-			if matchesCriteria(v, criteria) && i < len(sumVals) {
-				if f, ok := toFloat(sumVals[i]); ok {
-					sum += f
-				}
-			}
-		}
-		return sum, nil
-
-	case "COUNTIF":
-		if len(args) != 2 {
-			return nil, fmt.Errorf("COUNTIF requires 2 arguments")
-		}
-		rangeVals := flattenArg(args[0])
-		if rangeVals == nil {
-			return float64(0), nil
-		}
-		criteria := fmt.Sprintf("%v", args[1])
-		count := 0
-		for _, v := range rangeVals {
-			if matchesCriteria(v, criteria) {
 				count++
 			}
 		}
-		return float64(count), nil
+	}
+	if count == 0 {
+		return nil, fmt.Errorf("AVERAGE: no numeric values")
+	}
+	return sum / float64(count), nil
+}
 
-	case "COUNTIFS":
-		if len(args) < 2 || len(args)%2 != 0 {
-			return nil, fmt.Errorf("COUNTIFS requires pairs of (range, criteria)")
-		}
-		pairs := len(args) / 2
-		ranges := make([][]interface{}, pairs)
-		criterias := make([]string, pairs)
-		for i := 0; i < pairs; i++ {
-			ranges[i] = flattenArg(args[i*2])
-			if ranges[i] == nil {
-				return float64(0), nil
-			}
-			criterias[i] = fmt.Sprintf("%v", args[i*2+1])
-		}
-		count := 0
-		for idx := range ranges[0] {
-			allMatch := true
-			for p := 0; p < pairs; p++ {
-				if idx >= len(ranges[p]) || !matchesCriteria(ranges[p][idx], criterias[p]) {
-					allMatch = false
-					break
+func evalCOUNT(args []interface{}) (interface{}, error) {
+	count := 0
+	for _, a := range args {
+		if vals := flattenArg(a); vals != nil {
+			for _, v := range vals {
+				if isEmptyValue(v) {
+					continue
+				}
+				if _, ok := toFloat(v); ok {
+					count++
 				}
 			}
-			if allMatch {
+		} else {
+			if isEmptyValue(a) {
+				continue
+			}
+			if _, ok := toFloat(a); ok {
 				count++
 			}
 		}
-		return float64(count), nil
+	}
+	return float64(count), nil
+}
 
-	case "SUMIFS":
-		if len(args) < 3 || (len(args)-1)%2 != 0 {
-			return nil, fmt.Errorf("SUMIFS requires sum_range + pairs of (range, criteria)")
+func evalABS(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("ABS requires 1 argument")
+	}
+	if f, ok := toFloat(args[0]); ok {
+		return math.Abs(f), nil
+	}
+	return nil, fmt.Errorf("ABS requires numeric argument")
+}
+
+func evalMIN(args []interface{}) (interface{}, error) {
+	minVal := math.Inf(1)
+	found := false
+	for _, a := range args {
+		if vals := flattenArg(a); vals != nil {
+			for _, v := range vals {
+				if f, ok := toFloat(v); ok {
+					found = true
+					if f < minVal {
+						minVal = f
+					}
+				}
+			}
+		} else if f, ok := toFloat(a); ok {
+			found = true
+			if f < minVal {
+				minVal = f
+			}
 		}
-		sumVals := flattenArg(args[0])
+	}
+	if !found {
+		return float64(0), nil
+	}
+	return minVal, nil
+}
+
+func evalMAX(args []interface{}) (interface{}, error) {
+	maxVal := math.Inf(-1)
+	found := false
+	for _, a := range args {
+		if vals := flattenArg(a); vals != nil {
+			for _, v := range vals {
+				if f, ok := toFloat(v); ok {
+					found = true
+					if f > maxVal {
+						maxVal = f
+					}
+				}
+			}
+		} else if f, ok := toFloat(a); ok {
+			found = true
+			if f > maxVal {
+				maxVal = f
+			}
+		}
+	}
+	if !found {
+		return float64(0), nil
+	}
+	return maxVal, nil
+}
+
+func evalROUND(args []interface{}) (interface{}, error) {
+	if len(args) < 1 {
+		return nil, fmt.Errorf("ROUND requires at least 1 argument")
+	}
+	f, ok := toFloat(args[0])
+	if !ok {
+		return nil, fmt.Errorf("ROUND requires numeric argument")
+	}
+	decimals := 0
+	if len(args) >= 2 {
+		if d, ok := toFloat(args[1]); ok {
+			decimals = int(d)
+		}
+	}
+	pow := math.Pow(10, float64(decimals))
+	return math.Round(f*pow) / pow, nil
+}
+
+func evalFLOOR(args []interface{}) (interface{}, error) {
+	if len(args) < 1 {
+		return nil, fmt.Errorf("FLOOR requires at least 1 argument")
+	}
+	f, ok := toFloat(args[0])
+	if !ok {
+		return nil, fmt.Errorf("FLOOR requires numeric argument")
+	}
+	return math.Floor(f), nil
+}
+
+func evalCEILING(args []interface{}) (interface{}, error) {
+	if len(args) < 1 {
+		return nil, fmt.Errorf("CEILING requires at least 1 argument")
+	}
+	f, ok := toFloat(args[0])
+	if !ok {
+		return nil, fmt.Errorf("CEILING requires numeric argument")
+	}
+	return math.Ceil(f), nil
+}
+
+func evalCONCATENATE(args []interface{}) (interface{}, error) {
+	var sb strings.Builder
+	for _, a := range args {
+		sb.WriteString(fmt.Sprintf("%v", a))
+	}
+	return sb.String(), nil
+}
+
+func evalLEN(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("LEN requires 1 argument")
+	}
+	return float64(len(fmt.Sprintf("%v", args[0]))), nil
+}
+
+func evalTRIM(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("TRIM requires 1 argument")
+	}
+	return strings.TrimSpace(fmt.Sprintf("%v", args[0])), nil
+}
+
+func evalUPPER(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("UPPER requires 1 argument")
+	}
+	return strings.ToUpper(fmt.Sprintf("%v", args[0])), nil
+}
+
+func evalLOWER(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("LOWER requires 1 argument")
+	}
+	return strings.ToLower(fmt.Sprintf("%v", args[0])), nil
+}
+
+func evalLEFT(args []interface{}) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("LEFT requires 2 arguments")
+	}
+	s := fmt.Sprintf("%v", args[0])
+	n, ok := toFloat(args[1])
+	if !ok {
+		return nil, fmt.Errorf("LEFT requires numeric second argument")
+	}
+	idx := int(n)
+	if idx > len(s) {
+		idx = len(s)
+	}
+	return s[:idx], nil
+}
+
+func evalRIGHT(args []interface{}) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("RIGHT requires 2 arguments")
+	}
+	s := fmt.Sprintf("%v", args[0])
+	n, ok := toFloat(args[1])
+	if !ok {
+		return nil, fmt.Errorf("RIGHT requires numeric second argument")
+	}
+	idx := int(n)
+	if idx > len(s) {
+		idx = len(s)
+	}
+	return s[len(s)-idx:], nil
+}
+
+func evalMID(args []interface{}) (interface{}, error) {
+	if len(args) != 3 {
+		return nil, fmt.Errorf("MID requires 3 arguments")
+	}
+	s := fmt.Sprintf("%v", args[0])
+	start, ok1 := toFloat(args[1])
+	length, ok2 := toFloat(args[2])
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("MID requires numeric arguments")
+	}
+	startIdx := int(start) - 1
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	endIdx := startIdx + int(length)
+	if endIdx > len(s) {
+		endIdx = len(s)
+	}
+	if startIdx >= len(s) {
+		return "", nil
+	}
+	return s[startIdx:endIdx], nil
+}
+
+func evalMOD(args []interface{}) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("MOD requires 2 arguments")
+	}
+	a, ok1 := toFloat(args[0])
+	b, ok2 := toFloat(args[1])
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("MOD requires numeric arguments")
+	}
+	if b == 0 {
+		return nil, fmt.Errorf("MOD: division by zero")
+	}
+	return math.Mod(a, b), nil
+}
+
+func evalPOWER(args []interface{}) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("POWER requires 2 arguments")
+	}
+	base, ok1 := toFloat(args[0])
+	exp, ok2 := toFloat(args[1])
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("POWER requires numeric arguments")
+	}
+	return math.Pow(base, exp), nil
+}
+
+func evalSQRT(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("SQRT requires 1 argument")
+	}
+	f, ok := toFloat(args[0])
+	if !ok {
+		return nil, fmt.Errorf("SQRT requires numeric argument")
+	}
+	return math.Sqrt(f), nil
+}
+
+func evalINT(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("INT requires 1 argument")
+	}
+	f, ok := toFloat(args[0])
+	if !ok {
+		return nil, fmt.Errorf("INT requires numeric argument")
+	}
+	return math.Floor(f), nil
+}
+
+func evalCOUNTA(args []interface{}) (interface{}, error) {
+	count := 0
+	for _, a := range args {
+		if vals := flattenArg(a); vals != nil {
+			for _, v := range vals {
+				if v != nil {
+					s := fmt.Sprintf("%v", v)
+					if s != "" {
+						count++
+					}
+				}
+			}
+		} else if a != nil {
+			s := fmt.Sprintf("%v", a)
+			if s != "" {
+				count++
+			}
+		}
+	}
+	return float64(count), nil
+}
+
+func evalSUMIF(args []interface{}) (interface{}, error) {
+	if len(args) < 2 {
+		return nil, fmt.Errorf("SUMIF requires at least 2 arguments")
+	}
+	rangeVals := flattenArg(args[0])
+	if rangeVals == nil {
+		return float64(0), nil
+	}
+	criteria := fmt.Sprintf("%v", args[1])
+	sumVals := rangeVals
+	if len(args) >= 3 {
+		sumVals = flattenArg(args[2])
 		if sumVals == nil {
 			return float64(0), nil
 		}
-		pairs := (len(args) - 1) / 2
-		ranges := make([][]interface{}, pairs)
-		criterias := make([]string, pairs)
-		for i := 0; i < pairs; i++ {
-			ranges[i] = flattenArg(args[1+i*2])
-			if ranges[i] == nil {
-				return float64(0), nil
+	}
+	sum := 0.0
+	for i, v := range rangeVals {
+		if matchesCriteria(v, criteria) && i < len(sumVals) {
+			if f, ok := toFloat(sumVals[i]); ok {
+				sum += f
 			}
-			criterias[i] = fmt.Sprintf("%v", args[2+i*2])
 		}
-		sum := 0.0
-		for idx := range ranges[0] {
-			allMatch := true
-			for p := 0; p < pairs; p++ {
-				if idx >= len(ranges[p]) || !matchesCriteria(ranges[p][idx], criterias[p]) {
-					allMatch = false
+	}
+	return sum, nil
+}
+
+func evalCOUNTIF(args []interface{}) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("COUNTIF requires 2 arguments")
+	}
+	rangeVals := flattenArg(args[0])
+	if rangeVals == nil {
+		return float64(0), nil
+	}
+	criteria := fmt.Sprintf("%v", args[1])
+	count := 0
+	for _, v := range rangeVals {
+		if matchesCriteria(v, criteria) {
+			count++
+		}
+	}
+	return float64(count), nil
+}
+
+func evalCOUNTIFS(args []interface{}) (interface{}, error) {
+	if len(args) < 2 || len(args)%2 != 0 {
+		return nil, fmt.Errorf("COUNTIFS requires pairs of (range, criteria)")
+	}
+	pairs := len(args) / 2
+	ranges := make([][]interface{}, pairs)
+	criterias := make([]string, pairs)
+	for i := 0; i < pairs; i++ {
+		ranges[i] = flattenArg(args[i*2])
+		if ranges[i] == nil {
+			return float64(0), nil
+		}
+		criterias[i] = fmt.Sprintf("%v", args[i*2+1])
+	}
+	count := 0
+	for idx := range ranges[0] {
+		allMatch := true
+		for p := 0; p < pairs; p++ {
+			if idx >= len(ranges[p]) || !matchesCriteria(ranges[p][idx], criterias[p]) {
+				allMatch = false
+				break
+			}
+		}
+		if allMatch {
+			count++
+		}
+	}
+	return float64(count), nil
+}
+
+func evalSUMIFS(args []interface{}) (interface{}, error) {
+	if len(args) < 3 || (len(args)-1)%2 != 0 {
+		return nil, fmt.Errorf("SUMIFS requires sum_range + pairs of (range, criteria)")
+	}
+	sumVals := flattenArg(args[0])
+	if sumVals == nil {
+		return float64(0), nil
+	}
+	pairs := (len(args) - 1) / 2
+	ranges := make([][]interface{}, pairs)
+	criterias := make([]string, pairs)
+	for i := 0; i < pairs; i++ {
+		ranges[i] = flattenArg(args[1+i*2])
+		if ranges[i] == nil {
+			return float64(0), nil
+		}
+		criterias[i] = fmt.Sprintf("%v", args[2+i*2])
+	}
+	sum := 0.0
+	for idx := range ranges[0] {
+		allMatch := true
+		for p := 0; p < pairs; p++ {
+			if idx >= len(ranges[p]) || !matchesCriteria(ranges[p][idx], criterias[p]) {
+				allMatch = false
+				break
+			}
+		}
+		if allMatch && idx < len(sumVals) {
+			if f, ok := toFloat(sumVals[idx]); ok {
+				sum += f
+			}
+		}
+	}
+	return sum, nil
+}
+
+func valuesMatch(a, b interface{}) bool {
+	if fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b) {
+		return true
+	}
+	af, aok := toFloat(a)
+	bf, bok := toFloat(b)
+	return aok && bok && af == bf
+}
+
+func evalVLOOKUP(args []interface{}) (interface{}, error) {
+	if len(args) < 3 {
+		return nil, fmt.Errorf("VLOOKUP requires at least 3 arguments")
+	}
+	searchVal := args[0]
+	rd, ok := args[1].(*rangeData)
+	if !ok {
+		return nil, fmt.Errorf("VLOOKUP: second argument must be a range")
+	}
+	colIdx, cok := toFloat(args[2])
+	if !cok {
+		return nil, fmt.Errorf("VLOOKUP: third argument must be numeric")
+	}
+	colIndex := int(colIdx)
+	if colIndex < 1 || colIndex > rd.cols {
+		return nil, fmt.Errorf("VLOOKUP: column index out of range")
+	}
+	exactMatch := false
+	if len(args) >= 4 {
+		exactMatch = !toBool(args[3])
+	}
+	_ = exactMatch
+	for ri := 0; ri < rd.rows; ri++ {
+		cellVal := rd.values[ri*rd.cols]
+		if valuesMatch(searchVal, cellVal) {
+			return rd.values[ri*rd.cols+colIndex-1], nil
+		}
+	}
+	return nil, fmt.Errorf("VLOOKUP: value not found")
+}
+
+func evalHLOOKUP(args []interface{}) (interface{}, error) {
+	if len(args) < 3 {
+		return nil, fmt.Errorf("HLOOKUP requires at least 3 arguments")
+	}
+	searchVal := args[0]
+	rd, ok := args[1].(*rangeData)
+	if !ok {
+		return nil, fmt.Errorf("HLOOKUP: second argument must be a range")
+	}
+	rowIdx, rok := toFloat(args[2])
+	if !rok {
+		return nil, fmt.Errorf("HLOOKUP: third argument must be numeric")
+	}
+	rowIndex := int(rowIdx)
+	if rowIndex < 1 || rowIndex > rd.rows {
+		return nil, fmt.Errorf("HLOOKUP: row index out of range")
+	}
+	exactMatch := false
+	if len(args) >= 4 {
+		exactMatch = !toBool(args[3])
+	}
+	_ = exactMatch
+	for ci := 0; ci < rd.cols; ci++ {
+		cellVal := rd.values[ci]
+		if valuesMatch(searchVal, cellVal) {
+			return rd.values[(rowIndex-1)*rd.cols+ci], nil
+		}
+	}
+	return nil, fmt.Errorf("HLOOKUP: value not found")
+}
+
+func evalINDEX(args []interface{}) (interface{}, error) {
+	if len(args) < 2 {
+		return nil, fmt.Errorf("INDEX requires at least 2 arguments")
+	}
+	rd, ok := args[0].(*rangeData)
+	if !ok {
+		return nil, fmt.Errorf("INDEX: first argument must be a range")
+	}
+	rowNum, rok := toFloat(args[1])
+	if !rok {
+		return nil, fmt.Errorf("INDEX: row number must be numeric")
+	}
+	colNum := 1.0
+	if len(args) >= 3 {
+		cn, cnok := toFloat(args[2])
+		if !cnok {
+			return nil, fmt.Errorf("INDEX: column number must be numeric")
+		}
+		colNum = cn
+	}
+	ri := int(rowNum) - 1
+	ci := int(colNum) - 1
+	if ri < 0 || ri >= rd.rows || ci < 0 || ci >= rd.cols {
+		return nil, fmt.Errorf("INDEX: out of range")
+	}
+	return rd.values[ri*rd.cols+ci], nil
+}
+
+func evalMATCH(args []interface{}) (interface{}, error) {
+	if len(args) < 2 {
+		return nil, fmt.Errorf("MATCH requires at least 2 arguments")
+	}
+	searchVal := args[0]
+	vals := flattenArg(args[1])
+	if vals == nil {
+		return nil, fmt.Errorf("MATCH: second argument must be a range")
+	}
+	for i, v := range vals {
+		if fmt.Sprintf("%v", v) == fmt.Sprintf("%v", searchVal) {
+			return float64(i + 1), nil
+		}
+		sf, sok := toFloat(searchVal)
+		cf, cfok := toFloat(v)
+		if sok && cfok && sf == cf {
+			return float64(i + 1), nil
+		}
+	}
+	return nil, fmt.Errorf("MATCH: value not found")
+}
+
+func evalDATE(args []interface{}) (interface{}, error) {
+	if len(args) != 3 {
+		return nil, fmt.Errorf("DATE requires 3 arguments")
+	}
+	y, ok1 := toFloat(args[0])
+	m, ok2 := toFloat(args[1])
+	d, ok3 := toFloat(args[2])
+	if !ok1 || !ok2 || !ok3 {
+		return nil, fmt.Errorf("DATE requires numeric arguments")
+	}
+	t := time.Date(int(y), time.Month(int(m)), int(d), 0, 0, 0, 0, time.UTC)
+	epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+	days := t.Sub(epoch).Hours() / 24
+	return days, nil
+}
+
+func evalTODAY(args []interface{}) (interface{}, error) {
+	now := time.Now()
+	t := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+	return t.Sub(epoch).Hours() / 24, nil
+}
+
+func evalNOW(args []interface{}) (interface{}, error) {
+	now := time.Now().UTC()
+	epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+	return now.Sub(epoch).Hours() / 24, nil
+}
+
+func evalYEAR(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("YEAR requires 1 argument")
+	}
+	f, ok := toFloat(args[0])
+	if !ok {
+		return nil, fmt.Errorf("YEAR requires numeric argument")
+	}
+	epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+	t := epoch.Add(time.Duration(f*24) * time.Hour)
+	return float64(t.Year()), nil
+}
+
+func evalMONTH(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("MONTH requires 1 argument")
+	}
+	f, ok := toFloat(args[0])
+	if !ok {
+		return nil, fmt.Errorf("MONTH requires numeric argument")
+	}
+	epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+	t := epoch.Add(time.Duration(f*24) * time.Hour)
+	return float64(t.Month()), nil
+}
+
+func evalDAY(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("DAY requires 1 argument")
+	}
+	f, ok := toFloat(args[0])
+	if !ok {
+		return nil, fmt.Errorf("DAY requires numeric argument")
+	}
+	epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+	t := epoch.Add(time.Duration(f*24) * time.Hour)
+	return float64(t.Day()), nil
+}
+
+func evalFIND(args []interface{}) (interface{}, error) {
+	if len(args) < 2 {
+		return nil, fmt.Errorf("FIND requires at least 2 arguments")
+	}
+	search := fmt.Sprintf("%v", args[0])
+	text := fmt.Sprintf("%v", args[1])
+	startPos := 0
+	if len(args) >= 3 {
+		sp, ok := toFloat(args[2])
+		if ok {
+			startPos = int(sp) - 1
+		}
+	}
+	if startPos < 0 {
+		startPos = 0
+	}
+	if startPos >= len(text) {
+		return nil, fmt.Errorf("FIND: not found")
+	}
+	idx := strings.Index(text[startPos:], search)
+	if idx < 0 {
+		return nil, fmt.Errorf("FIND: not found")
+	}
+	return float64(startPos + idx + 1), nil
+}
+
+func evalSEARCH(args []interface{}) (interface{}, error) {
+	if len(args) < 2 {
+		return nil, fmt.Errorf("SEARCH requires at least 2 arguments")
+	}
+	search := strings.ToLower(fmt.Sprintf("%v", args[0]))
+	text := strings.ToLower(fmt.Sprintf("%v", args[1]))
+	startPos := 0
+	if len(args) >= 3 {
+		sp, ok := toFloat(args[2])
+		if ok {
+			startPos = int(sp) - 1
+		}
+	}
+	if startPos < 0 {
+		startPos = 0
+	}
+	if startPos >= len(text) {
+		return nil, fmt.Errorf("SEARCH: not found")
+	}
+	idx := strings.Index(text[startPos:], search)
+	if idx < 0 {
+		return nil, fmt.Errorf("SEARCH: not found")
+	}
+	return float64(startPos + idx + 1), nil
+}
+
+func evalSUBSTITUTE(args []interface{}) (interface{}, error) {
+	if len(args) < 3 {
+		return nil, fmt.Errorf("SUBSTITUTE requires at least 3 arguments")
+	}
+	text := fmt.Sprintf("%v", args[0])
+	old := fmt.Sprintf("%v", args[1])
+	newStr := fmt.Sprintf("%v", args[2])
+	if len(args) >= 4 {
+		inst, ok := toFloat(args[3])
+		if ok && int(inst) > 0 {
+			count := 0
+			target := int(inst)
+			result := strings.Builder{}
+			remaining := text
+			for {
+				idx := strings.Index(remaining, old)
+				if idx < 0 {
+					result.WriteString(remaining)
 					break
 				}
-			}
-			if allMatch && idx < len(sumVals) {
-				if f, ok := toFloat(sumVals[idx]); ok {
-					sum += f
+				count++
+				if count == target {
+					result.WriteString(remaining[:idx])
+					result.WriteString(newStr)
+					result.WriteString(remaining[idx+len(old):])
+					break
 				}
+				result.WriteString(remaining[:idx+len(old)])
+				remaining = remaining[idx+len(old):]
 			}
+			return result.String(), nil
 		}
-		return sum, nil
-
-	case "VLOOKUP":
-		if len(args) < 3 {
-			return nil, fmt.Errorf("VLOOKUP requires at least 3 arguments")
-		}
-		searchVal := args[0]
-		rd, ok := args[1].(*rangeData)
-		if !ok {
-			return nil, fmt.Errorf("VLOOKUP: second argument must be a range")
-		}
-		colIdx, cok := toFloat(args[2])
-		if !cok {
-			return nil, fmt.Errorf("VLOOKUP: third argument must be numeric")
-		}
-		colIndex := int(colIdx)
-		if colIndex < 1 || colIndex > rd.cols {
-			return nil, fmt.Errorf("VLOOKUP: column index out of range")
-		}
-		exactMatch := false
-		if len(args) >= 4 {
-			exactMatch = !toBool(args[3])
-		}
-		for ri := 0; ri < rd.rows; ri++ {
-			cellVal := rd.values[ri*rd.cols]
-			if exactMatch {
-				if fmt.Sprintf("%v", cellVal) == fmt.Sprintf("%v", searchVal) {
-					return rd.values[ri*rd.cols+colIndex-1], nil
-				}
-				sf, sok := toFloat(searchVal)
-				cf, cfok := toFloat(cellVal)
-				if sok && cfok && sf == cf {
-					return rd.values[ri*rd.cols+colIndex-1], nil
-				}
-			} else {
-				sf, sok := toFloat(searchVal)
-				cf, cfok := toFloat(cellVal)
-				if sok && cfok && cf == sf {
-					return rd.values[ri*rd.cols+colIndex-1], nil
-				}
-				if fmt.Sprintf("%v", cellVal) == fmt.Sprintf("%v", searchVal) {
-					return rd.values[ri*rd.cols+colIndex-1], nil
-				}
-			}
-		}
-		return nil, fmt.Errorf("VLOOKUP: value not found")
-
-	case "HLOOKUP":
-		if len(args) < 3 {
-			return nil, fmt.Errorf("HLOOKUP requires at least 3 arguments")
-		}
-		searchVal := args[0]
-		rd, ok := args[1].(*rangeData)
-		if !ok {
-			return nil, fmt.Errorf("HLOOKUP: second argument must be a range")
-		}
-		rowIdx, rok := toFloat(args[2])
-		if !rok {
-			return nil, fmt.Errorf("HLOOKUP: third argument must be numeric")
-		}
-		rowIndex := int(rowIdx)
-		if rowIndex < 1 || rowIndex > rd.rows {
-			return nil, fmt.Errorf("HLOOKUP: row index out of range")
-		}
-		exactMatch := false
-		if len(args) >= 4 {
-			exactMatch = !toBool(args[3])
-		}
-		for ci := 0; ci < rd.cols; ci++ {
-			cellVal := rd.values[ci]
-			matched := false
-			if exactMatch {
-				if fmt.Sprintf("%v", cellVal) == fmt.Sprintf("%v", searchVal) {
-					matched = true
-				}
-				sf, sok := toFloat(searchVal)
-				cf, cfok := toFloat(cellVal)
-				if sok && cfok && sf == cf {
-					matched = true
-				}
-			} else {
-				sf, sok := toFloat(searchVal)
-				cf, cfok := toFloat(cellVal)
-				if sok && cfok && cf == sf {
-					matched = true
-				}
-				if fmt.Sprintf("%v", cellVal) == fmt.Sprintf("%v", searchVal) {
-					matched = true
-				}
-			}
-			if matched {
-				return rd.values[(rowIndex-1)*rd.cols+ci], nil
-			}
-		}
-		return nil, fmt.Errorf("HLOOKUP: value not found")
-
-	case "INDEX":
-		if len(args) < 2 {
-			return nil, fmt.Errorf("INDEX requires at least 2 arguments")
-		}
-		rd, ok := args[0].(*rangeData)
-		if !ok {
-			return nil, fmt.Errorf("INDEX: first argument must be a range")
-		}
-		rowNum, rok := toFloat(args[1])
-		if !rok {
-			return nil, fmt.Errorf("INDEX: row number must be numeric")
-		}
-		colNum := 1.0
-		if len(args) >= 3 {
-			cn, cnok := toFloat(args[2])
-			if !cnok {
-				return nil, fmt.Errorf("INDEX: column number must be numeric")
-			}
-			colNum = cn
-		}
-		ri := int(rowNum) - 1
-		ci := int(colNum) - 1
-		if ri < 0 || ri >= rd.rows || ci < 0 || ci >= rd.cols {
-			return nil, fmt.Errorf("INDEX: out of range")
-		}
-		return rd.values[ri*rd.cols+ci], nil
-
-	case "MATCH":
-		if len(args) < 2 {
-			return nil, fmt.Errorf("MATCH requires at least 2 arguments")
-		}
-		searchVal := args[0]
-		vals := flattenArg(args[1])
-		if vals == nil {
-			return nil, fmt.Errorf("MATCH: second argument must be a range")
-		}
-		for i, v := range vals {
-			if fmt.Sprintf("%v", v) == fmt.Sprintf("%v", searchVal) {
-				return float64(i + 1), nil
-			}
-			sf, sok := toFloat(searchVal)
-			cf, cfok := toFloat(v)
-			if sok && cfok && sf == cf {
-				return float64(i + 1), nil
-			}
-		}
-		return nil, fmt.Errorf("MATCH: value not found")
-
-	case "DATE":
-		if len(args) != 3 {
-			return nil, fmt.Errorf("DATE requires 3 arguments")
-		}
-		y, ok1 := toFloat(args[0])
-		m, ok2 := toFloat(args[1])
-		d, ok3 := toFloat(args[2])
-		if !ok1 || !ok2 || !ok3 {
-			return nil, fmt.Errorf("DATE requires numeric arguments")
-		}
-		t := time.Date(int(y), time.Month(int(m)), int(d), 0, 0, 0, 0, time.UTC)
-		epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
-		days := t.Sub(epoch).Hours() / 24
-		return days, nil
-
-	case "TODAY":
-		now := time.Now()
-		t := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-		epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
-		return t.Sub(epoch).Hours() / 24, nil
-
-	case "NOW":
-		now := time.Now().UTC()
-		epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
-		return now.Sub(epoch).Hours() / 24, nil
-
-	case "YEAR":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("YEAR requires 1 argument")
-		}
-		f, ok := toFloat(args[0])
-		if !ok {
-			return nil, fmt.Errorf("YEAR requires numeric argument")
-		}
-		epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
-		t := epoch.Add(time.Duration(f*24) * time.Hour)
-		return float64(t.Year()), nil
-
-	case "MONTH":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("MONTH requires 1 argument")
-		}
-		f, ok := toFloat(args[0])
-		if !ok {
-			return nil, fmt.Errorf("MONTH requires numeric argument")
-		}
-		epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
-		t := epoch.Add(time.Duration(f*24) * time.Hour)
-		return float64(t.Month()), nil
-
-	case "DAY":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("DAY requires 1 argument")
-		}
-		f, ok := toFloat(args[0])
-		if !ok {
-			return nil, fmt.Errorf("DAY requires numeric argument")
-		}
-		epoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
-		t := epoch.Add(time.Duration(f*24) * time.Hour)
-		return float64(t.Day()), nil
-
-	case "FIND":
-		if len(args) < 2 {
-			return nil, fmt.Errorf("FIND requires at least 2 arguments")
-		}
-		search := fmt.Sprintf("%v", args[0])
-		text := fmt.Sprintf("%v", args[1])
-		startPos := 0
-		if len(args) >= 3 {
-			sp, ok := toFloat(args[2])
-			if ok {
-				startPos = int(sp) - 1
-			}
-		}
-		if startPos < 0 {
-			startPos = 0
-		}
-		if startPos >= len(text) {
-			return nil, fmt.Errorf("FIND: not found")
-		}
-		idx := strings.Index(text[startPos:], search)
-		if idx < 0 {
-			return nil, fmt.Errorf("FIND: not found")
-		}
-		return float64(startPos + idx + 1), nil
-
-	case "SEARCH":
-		if len(args) < 2 {
-			return nil, fmt.Errorf("SEARCH requires at least 2 arguments")
-		}
-		search := strings.ToLower(fmt.Sprintf("%v", args[0]))
-		text := strings.ToLower(fmt.Sprintf("%v", args[1]))
-		startPos := 0
-		if len(args) >= 3 {
-			sp, ok := toFloat(args[2])
-			if ok {
-				startPos = int(sp) - 1
-			}
-		}
-		if startPos < 0 {
-			startPos = 0
-		}
-		if startPos >= len(text) {
-			return nil, fmt.Errorf("SEARCH: not found")
-		}
-		idx := strings.Index(text[startPos:], search)
-		if idx < 0 {
-			return nil, fmt.Errorf("SEARCH: not found")
-		}
-		return float64(startPos + idx + 1), nil
-
-	case "SUBSTITUTE":
-		if len(args) < 3 {
-			return nil, fmt.Errorf("SUBSTITUTE requires at least 3 arguments")
-		}
-		text := fmt.Sprintf("%v", args[0])
-		old := fmt.Sprintf("%v", args[1])
-		newStr := fmt.Sprintf("%v", args[2])
-		if len(args) >= 4 {
-			inst, ok := toFloat(args[3])
-			if ok && int(inst) > 0 {
-				count := 0
-				target := int(inst)
-				result := strings.Builder{}
-				remaining := text
-				for {
-					idx := strings.Index(remaining, old)
-					if idx < 0 {
-						result.WriteString(remaining)
-						break
-					}
-					count++
-					if count == target {
-						result.WriteString(remaining[:idx])
-						result.WriteString(newStr)
-						result.WriteString(remaining[idx+len(old):])
-						break
-					}
-					result.WriteString(remaining[:idx+len(old)])
-					remaining = remaining[idx+len(old):]
-				}
-				return result.String(), nil
-			}
-		}
-		return strings.ReplaceAll(text, old, newStr), nil
-
-	case "REPLACE":
-		if len(args) != 4 {
-			return nil, fmt.Errorf("REPLACE requires 4 arguments")
-		}
-		text := fmt.Sprintf("%v", args[0])
-		start, ok1 := toFloat(args[1])
-		numChars, ok2 := toFloat(args[2])
-		newText := fmt.Sprintf("%v", args[3])
-		if !ok1 || !ok2 {
-			return nil, fmt.Errorf("REPLACE requires numeric arguments for start and numChars")
-		}
-		s := int(start) - 1
-		n := int(numChars)
-		if s < 0 {
-			s = 0
-		}
-		if s > len(text) {
-			s = len(text)
-		}
-		end := s + n
-		if end > len(text) {
-			end = len(text)
-		}
-		return text[:s] + newText + text[end:], nil
-
-	case "TEXT":
-		if len(args) != 2 {
-			return nil, fmt.Errorf("TEXT requires 2 arguments")
-		}
-		f, ok := toFloat(args[0])
-		format := fmt.Sprintf("%v", args[1])
-		if !ok {
-			return fmt.Sprintf("%v", args[0]), nil
-		}
-		switch format {
-		case "0":
-			return strconv.FormatFloat(math.Round(f), 'f', 0, 64), nil
-		case "0.00":
-			return strconv.FormatFloat(f, 'f', 2, 64), nil
-		case "0%":
-			return strconv.FormatFloat(f*100, 'f', 0, 64) + "%", nil
-		case "0.00%":
-			return strconv.FormatFloat(f*100, 'f', 2, 64) + "%", nil
-		default:
-			return strconv.FormatFloat(f, 'f', -1, 64), nil
-		}
-
-	case "VALUE":
-		if len(args) != 1 {
-			return nil, fmt.Errorf("VALUE requires 1 argument")
-		}
-		s := fmt.Sprintf("%v", args[0])
-		f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-		if err != nil {
-			return nil, fmt.Errorf("VALUE: cannot convert %q to number", s)
-		}
-		return f, nil
-
-	case "SUMPRODUCT":
-		if len(args) == 0 {
-			return float64(0), nil
-		}
-		firstVals := flattenArg(args[0])
-		if firstVals == nil {
-			return float64(0), nil
-		}
-		products := make([]float64, len(firstVals))
-		for i, v := range firstVals {
-			f, _ := toFloat(v)
-			products[i] = f
-		}
-		for ai := 1; ai < len(args); ai++ {
-			vals := flattenArg(args[ai])
-			if vals == nil {
-				continue
-			}
-			for i := 0; i < len(products) && i < len(vals); i++ {
-				f, _ := toFloat(vals[i])
-				products[i] *= f
-			}
-		}
-		sum := 0.0
-		for _, p := range products {
-			sum += p
-		}
-		return sum, nil
 	}
+	return strings.ReplaceAll(text, old, newStr), nil
+}
 
-	return nil, fmt.Errorf("unknown function: %s", name)
+func evalREPLACE(args []interface{}) (interface{}, error) {
+	if len(args) != 4 {
+		return nil, fmt.Errorf("REPLACE requires 4 arguments")
+	}
+	text := fmt.Sprintf("%v", args[0])
+	start, ok1 := toFloat(args[1])
+	numChars, ok2 := toFloat(args[2])
+	newText := fmt.Sprintf("%v", args[3])
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("REPLACE requires numeric arguments for start and numChars")
+	}
+	s := int(start) - 1
+	n := int(numChars)
+	if s < 0 {
+		s = 0
+	}
+	if s > len(text) {
+		s = len(text)
+	}
+	end := s + n
+	if end > len(text) {
+		end = len(text)
+	}
+	return text[:s] + newText + text[end:], nil
+}
+
+func evalTEXT(args []interface{}) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("TEXT requires 2 arguments")
+	}
+	f, ok := toFloat(args[0])
+	format := fmt.Sprintf("%v", args[1])
+	if !ok {
+		return fmt.Sprintf("%v", args[0]), nil
+	}
+	switch format {
+	case "0":
+		return strconv.FormatFloat(math.Round(f), 'f', 0, 64), nil
+	case "0.00":
+		return strconv.FormatFloat(f, 'f', 2, 64), nil
+	case "0%":
+		return strconv.FormatFloat(f*100, 'f', 0, 64) + "%", nil
+	case "0.00%":
+		return strconv.FormatFloat(f*100, 'f', 2, 64) + "%", nil
+	default:
+		return strconv.FormatFloat(f, 'f', -1, 64), nil
+	}
+}
+
+func evalVALUE(args []interface{}) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("VALUE requires 1 argument")
+	}
+	s := fmt.Sprintf("%v", args[0])
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return nil, fmt.Errorf("VALUE: cannot convert %q to number", s)
+	}
+	return f, nil
+}
+
+func evalSUMPRODUCT(args []interface{}) (interface{}, error) {
+	if len(args) == 0 {
+		return float64(0), nil
+	}
+	firstVals := flattenArg(args[0])
+	if firstVals == nil {
+		return float64(0), nil
+	}
+	products := make([]float64, len(firstVals))
+	for i, v := range firstVals {
+		f, _ := toFloat(v)
+		products[i] = f
+	}
+	for ai := 1; ai < len(args); ai++ {
+		vals := flattenArg(args[ai])
+		if vals == nil {
+			continue
+		}
+		for i := 0; i < len(products) && i < len(vals); i++ {
+			f, _ := toFloat(vals[i])
+			products[i] *= f
+		}
+	}
+	sum := 0.0
+	for _, p := range products {
+		sum += p
+	}
+	return sum, nil
 }
 
 func evalComparison(left interface{}, op string, right interface{}) bool {

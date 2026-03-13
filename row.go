@@ -42,6 +42,29 @@ func (f *File) GetRowHeight(sheet string, rowIdx int) (float64, error) {
 	return r.height, nil
 }
 
+func shiftRowRange(startRow *int, endRow *int, insertAt int, count int) {
+	if *startRow >= insertAt {
+		*startRow += count
+		*endRow += count
+	} else if *endRow >= insertAt {
+		*endRow += count
+	}
+}
+
+func shrinkRowRangeOnRemove(startRow, endRow, removeAt int) (int, int, bool) {
+	if startRow > removeAt {
+		return startRow - 1, endRow - 1, true
+	}
+	if endRow < removeAt {
+		return startRow, endRow, true
+	}
+	if startRow < removeAt && endRow >= removeAt {
+		endRow--
+		return startRow, endRow, endRow >= startRow
+	}
+	return startRow, endRow, false
+}
+
 func (f *File) InsertRows(sheet string, rowIdx, count int) error {
 	if f.closed {
 		return ErrFileClosed
@@ -70,46 +93,25 @@ func (f *File) InsertRows(sheet string, rowIdx, count int) error {
 
 	for i := range s.merges {
 		m := &s.merges[i]
-		if m.startRow >= rowIdx {
-			m.startRow += count
-			m.endRow += count
-		} else if m.endRow >= rowIdx {
-			m.endRow += count
-		}
+		shiftRowRange(&m.startRow, &m.endRow, rowIdx, count)
 	}
 
 	for i := range f.namedRanges {
 		nr := &f.namedRanges[i]
 		if nr.sheet == sheet {
-			if nr.startRow >= rowIdx {
-				nr.startRow += count
-				nr.endRow += count
-			} else if nr.endRow >= rowIdx {
-				nr.endRow += count
-			}
+			shiftRowRange(&nr.startRow, &nr.endRow, rowIdx, count)
 		}
 	}
 
 	for i := range f.autoFilters {
 		af := &f.autoFilters[i]
 		if af.sheet == sheet {
-			if af.startRow >= rowIdx {
-				af.startRow += count
-				af.endRow += count
-			} else if af.endRow >= rowIdx {
-				af.endRow += count
-			}
+			shiftRowRange(&af.startRow, &af.endRow, rowIdx, count)
 		}
 	}
 
 	if s.printRange != nil {
-		pr := s.printRange
-		if pr.startRow >= rowIdx {
-			pr.startRow += count
-			pr.endRow += count
-		} else if pr.endRow >= rowIdx {
-			pr.endRow += count
-		}
+		shiftRowRange(&s.printRange.startRow, &s.printRange.endRow, rowIdx, count)
 	}
 
 	f.shiftFormulasOnInsertRows(sheet, rowIdx, count)
@@ -117,18 +119,7 @@ func (f *File) InsertRows(sheet string, rowIdx, count int) error {
 	return nil
 }
 
-func (f *File) RemoveRow(sheet string, rowIdx int) error {
-	if f.closed {
-		return ErrFileClosed
-	}
-	s := f.getSheet(sheet)
-	if s == nil {
-		return ErrSheetNotFound
-	}
-	if rowIdx < 1 {
-		return ErrRowOutOfRange
-	}
-
+func removeRowAndShift(s *sheet, rowIdx int) {
 	delete(s.rows, rowIdx)
 
 	newRows := make(map[int]*row)
@@ -144,81 +135,86 @@ func (f *File) RemoveRow(sheet string, rowIdx int) error {
 	if s.maxRow > 0 {
 		s.maxRow--
 	}
+}
 
+func shrinkMergesOnRemoveRow(s *sheet, rowIdx int) {
 	newMerges := make([]mergeRange, 0, len(s.merges))
 	for _, m := range s.merges {
-		if m.startRow > rowIdx {
-			m.startRow--
-			m.endRow--
+		newStart, newEnd, keep := shrinkRowRangeOnRemove(m.startRow, m.endRow, rowIdx)
+		if keep {
+			m.startRow = newStart
+			m.endRow = newEnd
 			newMerges = append(newMerges, m)
-		} else if m.endRow < rowIdx {
-			newMerges = append(newMerges, m)
-		} else if m.startRow < rowIdx && m.endRow >= rowIdx {
-			m.endRow--
-			if m.endRow >= m.startRow {
-				newMerges = append(newMerges, m)
-			}
 		}
 	}
 	s.merges = newMerges
+}
 
+func shrinkNamedRangesOnRemoveRow(f *File, sheet string, rowIdx int) {
 	newNR := make([]namedRange, 0, len(f.namedRanges))
 	for _, nr := range f.namedRanges {
-		if nr.sheet == sheet {
-			if nr.startRow > rowIdx {
-				nr.startRow--
-				nr.endRow--
-				newNR = append(newNR, nr)
-			} else if nr.endRow < rowIdx {
-				newNR = append(newNR, nr)
-			} else if nr.startRow < rowIdx && nr.endRow >= rowIdx {
-				nr.endRow--
-				if nr.endRow >= nr.startRow {
-					newNR = append(newNR, nr)
-				}
-			}
-		} else {
+		if nr.sheet != sheet {
+			newNR = append(newNR, nr)
+			continue
+		}
+		newStart, newEnd, keep := shrinkRowRangeOnRemove(nr.startRow, nr.endRow, rowIdx)
+		if keep {
+			nr.startRow = newStart
+			nr.endRow = newEnd
 			newNR = append(newNR, nr)
 		}
 	}
 	f.namedRanges = newNR
+}
 
+func shrinkAutoFiltersOnRemoveRow(f *File, sheet string, rowIdx int) {
 	newAF := make([]autoFilter, 0, len(f.autoFilters))
 	for _, af := range f.autoFilters {
-		if af.sheet == sheet {
-			if af.startRow > rowIdx {
-				af.startRow--
-				af.endRow--
-				newAF = append(newAF, af)
-			} else if af.endRow < rowIdx {
-				newAF = append(newAF, af)
-			} else if af.startRow < rowIdx && af.endRow >= rowIdx {
-				af.endRow--
-				if af.endRow >= af.startRow {
-					newAF = append(newAF, af)
-				}
-			}
-		} else {
+		if af.sheet != sheet {
+			newAF = append(newAF, af)
+			continue
+		}
+		newStart, newEnd, keep := shrinkRowRangeOnRemove(af.startRow, af.endRow, rowIdx)
+		if keep {
+			af.startRow = newStart
+			af.endRow = newEnd
 			newAF = append(newAF, af)
 		}
 	}
 	f.autoFilters = newAF
+}
 
-	if s.printRange != nil {
-		pr := s.printRange
-		if pr.startRow > rowIdx {
-			pr.startRow--
-			pr.endRow--
-		} else if pr.endRow >= rowIdx && pr.startRow < rowIdx {
-			pr.endRow--
-			if pr.endRow < pr.startRow {
-				s.printRange = nil
-			}
-		} else if pr.startRow == rowIdx && pr.endRow == rowIdx {
-			s.printRange = nil
-		}
+func shrinkPrintRangeOnRemoveRow(s *sheet, rowIdx int) {
+	if s.printRange == nil {
+		return
+	}
+	pr := s.printRange
+	newStart, newEnd, keep := shrinkRowRangeOnRemove(pr.startRow, pr.endRow, rowIdx)
+	if keep {
+		pr.startRow = newStart
+		pr.endRow = newEnd
+	} else {
+		s.printRange = nil
+	}
+}
+
+func (f *File) RemoveRow(sheet string, rowIdx int) error {
+	if f.closed {
+		return ErrFileClosed
+	}
+	s := f.getSheet(sheet)
+	if s == nil {
+		return ErrSheetNotFound
+	}
+	if rowIdx < 1 {
+		return ErrRowOutOfRange
 	}
 
+	removeRowAndShift(s, rowIdx)
+	shrinkMergesOnRemoveRow(s, rowIdx)
+	shrinkNamedRangesOnRemoveRow(f, sheet, rowIdx)
+	shrinkAutoFiltersOnRemoveRow(f, sheet, rowIdx)
+	shrinkPrintRangeOnRemoveRow(s, rowIdx)
 	f.shiftFormulasOnRemoveRow(sheet, rowIdx)
 
 	return nil

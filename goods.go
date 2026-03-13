@@ -183,20 +183,20 @@ type xmlAnnotation struct {
 }
 
 type xmlTableCell struct {
-	XMLName                xml.Name         `xml:"table-cell"`
-	ValueType              string           `xml:"value-type,attr"`
-	Value                  string           `xml:"value,attr"`
-	DateValue              string           `xml:"date-value,attr"`
-	BooleanValue           string           `xml:"boolean-value,attr"`
-	StringValue            string           `xml:"string-value,attr"`
-	Formula                string           `xml:"formula,attr"`
-	StyleName              string           `xml:"style-name,attr"`
-	ContentValidationName  string           `xml:"content-validation-name,attr"`
-	NumberColumnsRepeated  int              `xml:"number-columns-repeated,attr"`
-	NumberColumnsSpanned   int              `xml:"number-columns-spanned,attr"`
-	NumberRowsSpanned      int              `xml:"number-rows-spanned,attr"`
-	Annotations            []xmlAnnotation  `xml:"annotation"`
-	Paragraphs             []xmlParagraph   `xml:"p"`
+	XMLName               xml.Name        `xml:"table-cell"`
+	ValueType             string          `xml:"value-type,attr"`
+	Value                 string          `xml:"value,attr"`
+	DateValue             string          `xml:"date-value,attr"`
+	BooleanValue          string          `xml:"boolean-value,attr"`
+	StringValue           string          `xml:"string-value,attr"`
+	Formula               string          `xml:"formula,attr"`
+	StyleName             string          `xml:"style-name,attr"`
+	ContentValidationName string          `xml:"content-validation-name,attr"`
+	NumberColumnsRepeated int             `xml:"number-columns-repeated,attr"`
+	NumberColumnsSpanned  int             `xml:"number-columns-spanned,attr"`
+	NumberRowsSpanned     int             `xml:"number-rows-spanned,attr"`
+	Annotations           []xmlAnnotation `xml:"annotation"`
+	Paragraphs            []xmlParagraph  `xml:"p"`
 }
 
 type xmlTableRow struct {
@@ -227,12 +227,12 @@ type xmlNamedRange struct {
 }
 
 type xmlContentValidation struct {
-	Name         string          `xml:"name,attr"`
-	Condition    string          `xml:"condition,attr"`
-	AllowEmpty   string          `xml:"allow-empty-cell,attr"`
-	BaseCellAddr string          `xml:"base-cell-address,attr"`
-	ErrorMessage *xmlErrorMsg    `xml:"error-message"`
-	HelpMessage  *xmlHelpMsg     `xml:"help-message"`
+	Name         string       `xml:"name,attr"`
+	Condition    string       `xml:"condition,attr"`
+	AllowEmpty   string       `xml:"allow-empty-cell,attr"`
+	BaseCellAddr string       `xml:"base-cell-address,attr"`
+	ErrorMessage *xmlErrorMsg `xml:"error-message"`
+	HelpMessage  *xmlHelpMsg  `xml:"help-message"`
 }
 
 type xmlErrorMsg struct {
@@ -267,12 +267,12 @@ type xmlStyleDef struct {
 }
 
 type xmlContent struct {
-	XMLName     xml.Name `xml:"document-content"`
-	AutoStyles  xmlAutoStyles `xml:"automatic-styles"`
-	Body        struct {
+	XMLName    xml.Name      `xml:"document-content"`
+	AutoStyles xmlAutoStyles `xml:"automatic-styles"`
+	Body       struct {
 		Spreadsheet struct {
-			Tables             []xmlTable               `xml:"table"`
-			NamedExpressions   struct {
+			Tables           []xmlTable `xml:"table"`
+			NamedExpressions struct {
 				NamedRanges []xmlNamedRange `xml:"named-range"`
 			} `xml:"named-expressions"`
 			ContentValidations struct {

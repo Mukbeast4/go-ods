@@ -82,7 +82,7 @@ func shiftFormulaRefs(formula string, sheetName string, isRow bool, insertIdx in
 		}
 
 		if refSheet != sheetName {
-			result.WriteString(formula[bracketStart : i])
+			result.WriteString(formula[bracketStart:i])
 			continue
 		}
 

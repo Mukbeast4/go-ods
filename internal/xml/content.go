@@ -40,19 +40,19 @@ type TableRow struct {
 }
 
 type TableCell struct {
-	ValueType              string      `xml:"value-type,attr,omitempty"`
-	Value                  string      `xml:"value,attr,omitempty"`
-	DateValue              string      `xml:"date-value,attr,omitempty"`
-	BooleanValue           string      `xml:"boolean-value,attr,omitempty"`
-	StringValue            string      `xml:"string-value,attr,omitempty"`
-	Formula                string      `xml:"formula,attr,omitempty"`
-	StyleName              string      `xml:"style-name,attr,omitempty"`
-	ContentValidationName  string      `xml:"content-validation-name,attr,omitempty"`
-	NumberColumnsRepeated  int         `xml:"number-columns-repeated,attr,omitempty"`
-	NumberColumnsSpanned   int         `xml:"number-columns-spanned,attr,omitempty"`
-	NumberRowsSpanned      int         `xml:"number-rows-spanned,attr,omitempty"`
-	Annotation             *Annotation `xml:"annotation,omitempty"`
-	Paragraphs             []TextP     `xml:"p"`
+	ValueType             string      `xml:"value-type,attr,omitempty"`
+	Value                 string      `xml:"value,attr,omitempty"`
+	DateValue             string      `xml:"date-value,attr,omitempty"`
+	BooleanValue          string      `xml:"boolean-value,attr,omitempty"`
+	StringValue           string      `xml:"string-value,attr,omitempty"`
+	Formula               string      `xml:"formula,attr,omitempty"`
+	StyleName             string      `xml:"style-name,attr,omitempty"`
+	ContentValidationName string      `xml:"content-validation-name,attr,omitempty"`
+	NumberColumnsRepeated int         `xml:"number-columns-repeated,attr,omitempty"`
+	NumberColumnsSpanned  int         `xml:"number-columns-spanned,attr,omitempty"`
+	NumberRowsSpanned     int         `xml:"number-rows-spanned,attr,omitempty"`
+	Annotation            *Annotation `xml:"annotation,omitempty"`
+	Paragraphs            []TextP     `xml:"p"`
 }
 
 type Annotation struct {

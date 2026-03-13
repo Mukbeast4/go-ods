@@ -88,13 +88,13 @@ func TestPageSetup(t *testing.T) {
 	s := "Sheet1"
 
 	err := f.SetPageSetup(s, &PageSetup{
-		Orientation: "landscape",
-		PaperWidth:  "29.7cm",
-		PaperHeight: "21.001cm",
-		MarginTop:   1.0,
+		Orientation:  "landscape",
+		PaperWidth:   "29.7cm",
+		PaperHeight:  "21.001cm",
+		MarginTop:    1.0,
 		MarginBottom: 1.0,
-		MarginLeft:  1.5,
-		MarginRight: 1.5,
+		MarginLeft:   1.5,
+		MarginRight:  1.5,
 	})
 	if err != nil {
 		t.Fatalf("SetPageSetup: %v", err)

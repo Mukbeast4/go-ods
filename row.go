@@ -22,6 +22,48 @@ func (f *File) SetRowHeight(sheet string, rowIdx int, height float64) error {
 	return nil
 }
 
+func (f *File) SetRowVisible(sheet string, rowIdx int, visible bool) error {
+	if f.closed {
+		return ErrFileClosed
+	}
+	s := f.getSheet(sheet)
+	if s == nil {
+		return ErrSheetNotFound
+	}
+	if rowIdx < 1 {
+		return ErrRowOutOfRange
+	}
+
+	r := s.getOrCreateRow(rowIdx)
+	r.visible = visible
+
+	if rowIdx > s.maxRow {
+		s.maxRow = rowIdx
+	}
+
+	return nil
+}
+
+func (f *File) GetRowVisible(sheet string, rowIdx int) (bool, error) {
+	if f.closed {
+		return false, ErrFileClosed
+	}
+	s := f.getSheet(sheet)
+	if s == nil {
+		return false, ErrSheetNotFound
+	}
+	if rowIdx < 1 {
+		return false, ErrRowOutOfRange
+	}
+
+	r, ok := s.rows[rowIdx]
+	if !ok {
+		return true, nil
+	}
+
+	return r.visible, nil
+}
+
 func (f *File) GetRowHeight(sheet string, rowIdx int) (float64, error) {
 	if f.closed {
 		return 0, ErrFileClosed

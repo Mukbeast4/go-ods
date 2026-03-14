@@ -71,7 +71,7 @@ func NSAttr(prefix string) xml.Attr {
 	}
 }
 
-func WriteContentXML(w io.Writer, doc *DocumentContent, autoStyles []Style, validations []ContentValidation, namedRanges []NamedRange, databaseRanges []DatabaseRange) error {
+func WriteContentXML(w io.Writer, doc *DocumentContent, autoStyles []Style, validations []ContentValidation, namedRanges []NamedRange, databaseRanges []DatabaseRange, conditionalFormats []CalcextConditionalFormat) error {
 	if _, err := io.WriteString(w, xml.Header); err != nil {
 		return err
 	}
@@ -84,6 +84,7 @@ func WriteContentXML(w io.Writer, doc *DocumentContent, autoStyles []Style, vali
 		NSAttr("xlink"), NSAttr("dc"), NSAttr("meta"),
 		NSAttr("number"), NSAttr("svg"), NSAttr("chart"),
 		NSAttr("dr3d"), NSAttr("form"), NSAttr("script"),
+		NSAttr("calcext"),
 		Attr("office", "version", "1.2"),
 	}
 
@@ -99,7 +100,7 @@ func WriteContentXML(w io.Writer, doc *DocumentContent, autoStyles []Style, vali
 		return err
 	}
 
-	if err := writeSpreadsheetBody(xw, doc, validations, namedRanges, databaseRanges); err != nil {
+	if err := writeSpreadsheetBody(xw, doc, validations, namedRanges, databaseRanges, conditionalFormats); err != nil {
 		return err
 	}
 
@@ -113,7 +114,7 @@ func WriteContentXML(w io.Writer, doc *DocumentContent, autoStyles []Style, vali
 	return xw.Flush()
 }
 
-func writeSpreadsheetBody(xw *Writer, doc *DocumentContent, validations []ContentValidation, namedRanges []NamedRange, databaseRanges []DatabaseRange) error {
+func writeSpreadsheetBody(xw *Writer, doc *DocumentContent, validations []ContentValidation, namedRanges []NamedRange, databaseRanges []DatabaseRange, conditionalFormats []CalcextConditionalFormat) error {
 	if err := xw.StartElement("office", "spreadsheet"); err != nil {
 		return err
 	}
@@ -142,6 +143,12 @@ func writeSpreadsheetBody(xw *Writer, doc *DocumentContent, validations []Conten
 		}
 	}
 
+	if len(conditionalFormats) > 0 {
+		if err := writeCalcextConditionalFormats(xw, conditionalFormats); err != nil {
+			return err
+		}
+	}
+
 	return xw.EndElement("office", "spreadsheet")
 }
 
@@ -163,6 +170,9 @@ func writeTableColumnProperties(xw *Writer, tcp *TableColumnProperties) error {
 	colAttrs := []xml.Attr{}
 	if tcp.ColumnWidth != "" {
 		colAttrs = append(colAttrs, Attr("style", "column-width", tcp.ColumnWidth))
+	}
+	if tcp.UseOptimalWidth != "" {
+		colAttrs = append(colAttrs, Attr("style", "use-optimal-column-width", tcp.UseOptimalWidth))
 	}
 	if err := xw.StartElement("style", "table-column-properties", colAttrs...); err != nil {
 		return err
@@ -270,6 +280,9 @@ func writeCellProperties(xw *Writer, cp *TableCellProperties) error {
 	if cp.WrapOption != "" {
 		attrs = append(attrs, Attr("fo", "wrap-option", cp.WrapOption))
 	}
+	if cp.CellProtect != "" {
+		attrs = append(attrs, Attr("style", "cell-protect", cp.CellProtect))
+	}
 
 	if err := xw.StartElement("style", "table-cell-properties", attrs...); err != nil {
 		return err
@@ -311,6 +324,9 @@ func writeTable(xw *Writer, table *Table) error {
 	tableAttrs := []xml.Attr{
 		Attr("table", "name", table.Name),
 	}
+	if table.Protected != "" {
+		tableAttrs = append(tableAttrs, Attr("table", "protected", table.Protected))
+	}
 	if table.PrintRanges != "" {
 		tableAttrs = append(tableAttrs, Attr("table", "print-ranges", table.PrintRanges))
 	}
@@ -322,6 +338,9 @@ func writeTable(xw *Writer, table *Table) error {
 		attrs := []xml.Attr{}
 		if col.StyleName != "" {
 			attrs = append(attrs, Attr("table", "style-name", col.StyleName))
+		}
+		if col.Visibility != "" {
+			attrs = append(attrs, Attr("table", "visibility", col.Visibility))
 		}
 		if col.DefaultCellStyleName != "" {
 			attrs = append(attrs, Attr("table", "default-cell-style-name", col.DefaultCellStyleName))
@@ -350,6 +369,9 @@ func writeRow(xw *Writer, row *TableRow) error {
 	attrs := []xml.Attr{}
 	if row.StyleName != "" {
 		attrs = append(attrs, Attr("table", "style-name", row.StyleName))
+	}
+	if row.Visibility != "" {
+		attrs = append(attrs, Attr("table", "visibility", row.Visibility))
 	}
 	if row.NumberRowsRepeated > 1 {
 		attrs = append(attrs, Attr("table", "number-rows-repeated", fmt.Sprintf("%d", row.NumberRowsRepeated)))
@@ -820,10 +842,89 @@ func writeDatabaseRanges(xw *Writer, ranges []DatabaseRange) error {
 		if err := xw.StartElement("table", "database-range", attrs...); err != nil {
 			return err
 		}
+
+		if dr.Filter != nil && len(dr.Filter.Conditions) > 0 {
+			if err := xw.StartElement("table", "filter"); err != nil {
+				return err
+			}
+			for _, fc := range dr.Filter.Conditions {
+				fcAttrs := []xml.Attr{
+					Attr("table", "field-number", fmt.Sprintf("%d", fc.FieldNumber)),
+					Attr("table", "operator", fc.Operator),
+					Attr("table", "value", fc.Value),
+				}
+				if err := xw.StartElement("table", "filter-condition", fcAttrs...); err != nil {
+					return err
+				}
+				if err := xw.EndElement("table", "filter-condition"); err != nil {
+					return err
+				}
+			}
+			if err := xw.EndElement("table", "filter"); err != nil {
+				return err
+			}
+		}
+
+		if dr.Sort != nil && len(dr.Sort.SortBy) > 0 {
+			if err := xw.StartElement("table", "sort"); err != nil {
+				return err
+			}
+			for _, sb := range dr.Sort.SortBy {
+				sbAttrs := []xml.Attr{
+					Attr("table", "field-number", fmt.Sprintf("%d", sb.FieldNumber)),
+				}
+				if sb.Order != "" {
+					sbAttrs = append(sbAttrs, Attr("table", "order", sb.Order))
+				}
+				if err := xw.StartElement("table", "sort-by", sbAttrs...); err != nil {
+					return err
+				}
+				if err := xw.EndElement("table", "sort-by"); err != nil {
+					return err
+				}
+			}
+			if err := xw.EndElement("table", "sort"); err != nil {
+				return err
+			}
+		}
+
 		if err := xw.EndElement("table", "database-range"); err != nil {
 			return err
 		}
 	}
 
 	return xw.EndElement("table", "database-ranges")
+}
+
+func writeCalcextConditionalFormats(xw *Writer, formats []CalcextConditionalFormat) error {
+	if err := xw.StartElement("calcext", "conditional-formats"); err != nil {
+		return err
+	}
+
+	for _, cf := range formats {
+		attrs := []xml.Attr{
+			Attr("calcext", "target-range-address", cf.TargetRangeAddress),
+		}
+		if err := xw.StartElement("calcext", "conditional-format", attrs...); err != nil {
+			return err
+		}
+		for _, cond := range cf.Conditions {
+			condAttrs := []xml.Attr{
+				Attr("calcext", "apply-style-name", cond.ApplyStyleName),
+				Attr("calcext", "value", cond.Value),
+				Attr("calcext", "base-cell-address", cond.BaseCellAddress),
+			}
+			if err := xw.StartElement("calcext", "condition", condAttrs...); err != nil {
+				return err
+			}
+			if err := xw.EndElement("calcext", "condition"); err != nil {
+				return err
+			}
+		}
+		if err := xw.EndElement("calcext", "conditional-format"); err != nil {
+			return err
+		}
+	}
+
+	return xw.EndElement("calcext", "conditional-formats")
 }

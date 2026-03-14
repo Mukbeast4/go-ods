@@ -22,6 +22,7 @@ type Spreadsheet struct {
 
 type Table struct {
 	Name        string        `xml:"name,attr"`
+	Protected   string        `xml:"protected,attr,omitempty"`
 	PrintRanges string        `xml:"print-ranges,attr,omitempty"`
 	Columns     []TableColumn `xml:"table-column"`
 	Rows        []TableRow    `xml:"table-row"`
@@ -29,12 +30,14 @@ type Table struct {
 
 type TableColumn struct {
 	StyleName             string `xml:"style-name,attr,omitempty"`
+	Visibility            string `xml:"visibility,attr,omitempty"`
 	DefaultCellStyleName  string `xml:"default-cell-style-name,attr,omitempty"`
 	NumberColumnsRepeated int    `xml:"number-columns-repeated,attr,omitempty"`
 }
 
 type TableRow struct {
 	StyleName          string      `xml:"style-name,attr,omitempty"`
+	Visibility         string      `xml:"visibility,attr,omitempty"`
 	NumberRowsRepeated int         `xml:"number-rows-repeated,attr,omitempty"`
 	Cells              []TableCell `xml:"table-cell"`
 }
@@ -88,10 +91,42 @@ type HelpMessage struct {
 	Text    string
 }
 
+type FilterCondition struct {
+	FieldNumber int
+	Operator    string
+	Value       string
+}
+
+type Filter struct {
+	Conditions []FilterCondition
+}
+
+type SortBy struct {
+	FieldNumber int
+	Order       string
+}
+
+type Sort struct {
+	SortBy []SortBy
+}
+
 type DatabaseRange struct {
 	Name                 string
 	TargetRangeAddress   string
 	DisplayFilterButtons string
+	Filter               *Filter
+	Sort                 *Sort
+}
+
+type CalcextCondition struct {
+	ApplyStyleName  string
+	Value           string
+	BaseCellAddress string
+}
+
+type CalcextConditionalFormat struct {
+	TargetRangeAddress string
+	Conditions         []CalcextCondition
 }
 
 type TextP struct {
@@ -141,6 +176,7 @@ type TableCellProperties struct {
 	Border          string `xml:"border,attr,omitempty"`
 	VerticalAlign   string `xml:"vertical-align,attr,omitempty"`
 	WrapOption      string `xml:"wrap-option,attr,omitempty"`
+	CellProtect     string `xml:"cell-protect,attr,omitempty"`
 }
 
 type TextProperties struct {

@@ -329,6 +329,46 @@ func (f *File) GetSheetDimension(sheet string) (string, error) {
 	return fmt.Sprintf("A1:%s", endCell), nil
 }
 
+func (f *File) SetRowValues(sheet string, row int, values []any) error {
+	if f.closed {
+		return sheetErr(sheet, ErrFileClosed)
+	}
+	s := f.getSheet(sheet)
+	if s == nil {
+		return sheetErr(sheet, ErrSheetNotFound)
+	}
+	if row < 1 {
+		return sheetErr(sheet, ErrRowOutOfRange)
+	}
+
+	for i, v := range values {
+		valueType, rawValue := detectCellType(v)
+		s.setCellValue(i+1, row, valueType, rawValue)
+	}
+	f.triggerRecalc(sheet)
+	return nil
+}
+
+func (f *File) AppendRows(sheet string, rows [][]any) error {
+	if f.closed {
+		return sheetErr(sheet, ErrFileClosed)
+	}
+	s := f.getSheet(sheet)
+	if s == nil {
+		return sheetErr(sheet, ErrSheetNotFound)
+	}
+
+	startRow := s.maxRow + 1
+	for i, rowValues := range rows {
+		for j, v := range rowValues {
+			valueType, rawValue := detectCellType(v)
+			s.setCellValue(j+1, startRow+i, valueType, rawValue)
+		}
+	}
+	f.triggerRecalc(sheet)
+	return nil
+}
+
 func (s *sheet) setCellValue(col, row int, valueType CellType, rawValue string) {
 	r := s.getOrCreateRow(row)
 

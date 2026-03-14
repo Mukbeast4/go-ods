@@ -28,22 +28,27 @@ type File struct {
 }
 
 type sheet struct {
-	name        string
-	columns     []column
-	rows        map[int]*row
-	merges      []mergeRange
-	maxRow      int
-	maxCol      int
-	validations []*dataValidation
-	freezeCol   int
-	freezeRow   int
-	printRange  *printRange
-	pageSetup   *PageSetup
+	name               string
+	columns            []column
+	rows               map[int]*row
+	merges             []mergeRange
+	maxRow             int
+	maxCol             int
+	validations        []*dataValidation
+	freezeCol          int
+	freezeRow          int
+	printRange         *printRange
+	pageSetup          *PageSetup
+	protected          bool
+	conditionalFormats []ConditionalFormat
+	sortKeys           []SortKey
 }
 
 type column struct {
 	width   float64
 	styleID int
+	visible bool
+	autoFit bool
 }
 
 type row struct {
@@ -202,6 +207,7 @@ type xmlTableCell struct {
 type xmlTableRow struct {
 	XMLName            xml.Name       `xml:"table-row"`
 	StyleName          string         `xml:"style-name,attr"`
+	Visibility         string         `xml:"visibility,attr"`
 	NumberRowsRepeated int            `xml:"number-rows-repeated,attr"`
 	Cells              []xmlTableCell `xml:"table-cell"`
 }
@@ -209,12 +215,14 @@ type xmlTableRow struct {
 type xmlTableColumn struct {
 	XMLName               xml.Name `xml:"table-column"`
 	StyleName             string   `xml:"style-name,attr"`
+	Visibility            string   `xml:"visibility,attr"`
 	NumberColumnsRepeated int      `xml:"number-columns-repeated,attr"`
 }
 
 type xmlTable struct {
 	XMLName    xml.Name         `xml:"table"`
 	Name       string           `xml:"name,attr"`
+	Protected  string           `xml:"protected,attr"`
 	PrintRange string           `xml:"print-ranges,attr"`
 	Columns    []xmlTableColumn `xml:"table-column"`
 	Rows       []xmlTableRow    `xml:"table-row"`
@@ -248,22 +256,71 @@ type xmlHelpMsg struct {
 	Paras   []xmlParagraph `xml:"p"`
 }
 
+type xmlFilterCondition struct {
+	XMLName     xml.Name `xml:"filter-condition"`
+	FieldNumber int      `xml:"field-number,attr"`
+	Operator    string   `xml:"operator,attr"`
+	Value       string   `xml:"value,attr"`
+}
+
+type xmlFilter struct {
+	XMLName    xml.Name               `xml:"filter"`
+	Conditions []xmlFilterCondition   `xml:"filter-condition"`
+}
+
+type xmlSortBy struct {
+	XMLName     xml.Name `xml:"sort-by"`
+	FieldNumber int      `xml:"field-number,attr"`
+	Order       string   `xml:"order,attr"`
+}
+
+type xmlSort struct {
+	XMLName xml.Name    `xml:"sort"`
+	SortBy  []xmlSortBy `xml:"sort-by"`
+}
+
 type xmlDatabaseRange struct {
-	Name                 string `xml:"name,attr"`
-	TargetRangeAddress   string `xml:"target-range-address,attr"`
-	DisplayFilterButtons string `xml:"display-filter-buttons,attr"`
+	Name                 string     `xml:"name,attr"`
+	TargetRangeAddress   string     `xml:"target-range-address,attr"`
+	DisplayFilterButtons string     `xml:"display-filter-buttons,attr"`
+	Filter               *xmlFilter `xml:"filter"`
+	Sort                 *xmlSort   `xml:"sort"`
+}
+
+type xmlCalcextCondition struct {
+	XMLName         xml.Name `xml:"condition"`
+	ApplyStyleName  string   `xml:"apply-style-name,attr"`
+	Value           string   `xml:"value,attr"`
+	BaseCellAddress string   `xml:"base-cell-address,attr"`
+}
+
+type xmlCalcextConditionalFormat struct {
+	XMLName            xml.Name                `xml:"conditional-format"`
+	TargetRangeAddress string                  `xml:"target-range-address,attr"`
+	Conditions         []xmlCalcextCondition   `xml:"condition"`
+}
+
+type xmlCalcextConditionalFormats struct {
+	XMLName xml.Name                       `xml:"conditional-formats"`
+	Formats []xmlCalcextConditionalFormat  `xml:"conditional-format"`
 }
 
 type xmlAutoStyles struct {
 	Styles []xmlStyleDef `xml:"style"`
 }
 
+type xmlTableColumnProps struct {
+	UseOptimalWidth string `xml:"use-optimal-column-width,attr"`
+	ColumnWidth     string `xml:"column-width,attr"`
+}
+
 type xmlStyleDef struct {
-	XMLName         xml.Name `xml:"style"`
-	Name            string   `xml:"name,attr"`
-	Family          string   `xml:"family,attr"`
-	ParentStyleName string   `xml:"parent-style-name,attr"`
-	DataStyleName   string   `xml:"data-style-name,attr"`
+	XMLName               xml.Name                `xml:"style"`
+	Name                  string                  `xml:"name,attr"`
+	Family                string                  `xml:"family,attr"`
+	ParentStyleName       string                  `xml:"parent-style-name,attr"`
+	DataStyleName         string                  `xml:"data-style-name,attr"`
+	TableColumnProperties *xmlTableColumnProps     `xml:"table-column-properties"`
 }
 
 type xmlContent struct {
@@ -281,6 +338,7 @@ type xmlContent struct {
 			DatabaseRanges struct {
 				Ranges []xmlDatabaseRange `xml:"database-range"`
 			} `xml:"database-ranges"`
+			ConditionalFormats *xmlCalcextConditionalFormats `xml:"conditional-formats"`
 		} `xml:"spreadsheet"`
 	} `xml:"body"`
 }
@@ -293,12 +351,19 @@ func parseContentXML(f *File, data []byte) error {
 
 	f.contentStyles = make(map[string]oxml.Style)
 	for _, s := range content.AutoStyles.Styles {
-		f.contentStyles[s.Name] = oxml.Style{
+		cs := oxml.Style{
 			Name:            s.Name,
 			Family:          s.Family,
 			ParentStyleName: s.ParentStyleName,
 			DataStyleName:   s.DataStyleName,
 		}
+		if s.TableColumnProperties != nil {
+			cs.TableColumnProperties = &oxml.TableColumnProperties{
+				ColumnWidth:     s.TableColumnProperties.ColumnWidth,
+				UseOptimalWidth: s.TableColumnProperties.UseOptimalWidth,
+			}
+		}
+		f.contentStyles[s.Name] = cs
 	}
 
 	validationMap := make(map[string]*xmlContentValidation)
@@ -308,12 +373,13 @@ func parseContentXML(f *File, data []byte) error {
 	}
 
 	for _, xmlTbl := range content.Body.Spreadsheet.Tables {
-		s := parseXMLTable(&xmlTbl, validationMap, content.Body.Spreadsheet.ContentValidations.Validations)
+		s := parseXMLTable(&xmlTbl, validationMap, content.Body.Spreadsheet.ContentValidations.Validations, f.contentStyles)
 		f.sheets = append(f.sheets, s)
 	}
 
 	parseNamedRanges(f, content.Body.Spreadsheet.NamedExpressions.NamedRanges)
 	parseAutoFilters(f, content.Body.Spreadsheet.DatabaseRanges.Ranges)
+	parseConditionalFormats(f, content.Body.Spreadsheet.ConditionalFormats)
 
 	if len(f.sheets) == 0 {
 		s := &sheet{
@@ -327,11 +393,15 @@ func parseContentXML(f *File, data []byte) error {
 	return nil
 }
 
-func parseXMLTable(xmlTbl *xmlTable, validationMap map[string]*xmlContentValidation, validations []xmlContentValidation) *sheet {
+func parseXMLTable(xmlTbl *xmlTable, validationMap map[string]*xmlContentValidation, validations []xmlContentValidation, contentStyles map[string]oxml.Style) *sheet {
 	s := &sheet{
 		name:    xmlTbl.Name,
 		rows:    make(map[int]*row),
 		columns: make([]column, 0),
+	}
+
+	if xmlTbl.Protected == "true" {
+		s.protected = true
 	}
 
 	if xmlTbl.PrintRange != "" {
@@ -349,8 +419,15 @@ func parseXMLTable(xmlTbl *xmlTable, validationMap map[string]*xmlContentValidat
 		if count < 1 {
 			count = 1
 		}
+		visible := xmlCol.Visibility != "collapse"
+		autoFit := false
+		if xmlCol.StyleName != "" {
+			if cs, ok := contentStyles[xmlCol.StyleName]; ok && cs.TableColumnProperties != nil {
+				autoFit = cs.TableColumnProperties.UseOptimalWidth == "true"
+			}
+		}
 		for range count {
-			s.columns = append(s.columns, column{})
+			s.columns = append(s.columns, column{visible: visible, autoFit: autoFit})
 		}
 	}
 
@@ -388,15 +465,77 @@ func parseAutoFilters(f *File, xmlRanges []xmlDatabaseRange) {
 		if dr.DisplayFilterButtons != "true" {
 			continue
 		}
-		sheet, sc, sr, ec, er, err := parseODSRangeAddress(dr.TargetRangeAddress)
+		sheetName, sc, sr, ec, er, err := parseODSRangeAddress(dr.TargetRangeAddress)
 		if err != nil {
 			continue
 		}
-		f.autoFilters = append(f.autoFilters, autoFilter{
-			sheet: sheet, startCol: sc, startRow: sr,
+		af := autoFilter{
+			sheet: sheetName, startCol: sc, startRow: sr,
 			endCol: ec, endRow: er,
-		})
+		}
+		if dr.Filter != nil {
+			for _, fc := range dr.Filter.Conditions {
+				af.filters = append(af.filters, filterColumn{
+					colIdx: fc.FieldNumber,
+					values: []string{fc.Value},
+				})
+			}
+		}
+		f.autoFilters = append(f.autoFilters, af)
+
+		if dr.Sort != nil {
+			s := f.getSheet(sheetName)
+			if s != nil {
+				for _, sb := range dr.Sort.SortBy {
+					s.sortKeys = append(s.sortKeys, SortKey{
+						Column:     sb.FieldNumber,
+						Descending: sb.Order == "descending",
+					})
+				}
+			}
+		}
 	}
+}
+
+func parseConditionalFormats(f *File, xmlCF *xmlCalcextConditionalFormats) {
+	if xmlCF == nil {
+		return
+	}
+	for _, fmt := range xmlCF.Formats {
+		sheetName, cellRange := splitConditionalTarget(fmt.TargetRangeAddress)
+		s := f.getSheet(sheetName)
+		if s == nil {
+			continue
+		}
+		cf := ConditionalFormat{
+			Range: cellRange,
+		}
+		for _, cond := range fmt.Conditions {
+			cf.Rules = append(cf.Rules, ConditionalRule{
+				Value:           cond.Value,
+				StyleName:       cond.ApplyStyleName,
+				BaseCellAddress: cond.BaseCellAddress,
+			})
+		}
+		s.conditionalFormats = append(s.conditionalFormats, cf)
+	}
+}
+
+func splitConditionalTarget(addr string) (string, string) {
+	parts := strings.SplitN(addr, ".", 2)
+	if len(parts) < 2 {
+		return "", addr
+	}
+	sheetName := parts[0]
+	rest := parts[1]
+	if idx := strings.Index(rest, ":"); idx >= 0 {
+		afterColon := rest[idx+1:]
+		if dotIdx := strings.Index(afterColon, "."); dotIdx >= 0 {
+			afterColon = afterColon[dotIdx+1:]
+		}
+		return sheetName, rest[:idx+1] + afterColon
+	}
+	return sheetName, rest
 }
 
 func parseXMLRows(s *sheet, xmlRows []xmlTableRow) {
@@ -412,9 +551,17 @@ func parseXMLRows(s *sheet, xmlRows []xmlTableRow) {
 			continue
 		}
 
+		rowHidden := xmlRow.Visibility == "collapse"
 		for range rowRepeat {
 			hasData := parseXMLRowCells(s, rowIdx, xmlRow.Cells)
 			if hasData {
+				if rowIdx > s.maxRow {
+					s.maxRow = rowIdx
+				}
+			}
+			if rowHidden {
+				r := s.getOrCreateRow(rowIdx)
+				r.visible = false
 				if rowIdx > s.maxRow {
 					s.maxRow = rowIdx
 				}
@@ -853,12 +1000,13 @@ func defaultDocStyles() *oxml.DocumentStyles {
 	return &ds
 }
 
-func (f *File) buildContentXML() (*oxml.DocumentContent, []oxml.Style, []oxml.ContentValidation, []oxml.NamedRange, []oxml.DatabaseRange) {
+func (f *File) buildContentXML() (*oxml.DocumentContent, []oxml.Style, []oxml.ContentValidation, []oxml.NamedRange, []oxml.DatabaseRange, []oxml.CalcextConditionalFormat) {
 	doc := &oxml.DocumentContent{}
 	var autoStyles []oxml.Style
 	var allValidations []oxml.ContentValidation
 	var allNamedRanges []oxml.NamedRange
 	var allDatabaseRanges []oxml.DatabaseRange
+	var allConditionalFormats []oxml.CalcextConditionalFormat
 
 	for _, nr := range f.namedRanges {
 		allNamedRanges = append(allNamedRanges, oxml.NamedRange{
@@ -869,17 +1017,58 @@ func (f *File) buildContentXML() (*oxml.DocumentContent, []oxml.Style, []oxml.Co
 	}
 
 	for i, af := range f.autoFilters {
-		allDatabaseRanges = append(allDatabaseRanges, oxml.DatabaseRange{
+		dr := oxml.DatabaseRange{
 			Name:                 fmt.Sprintf("__Anonymous_Sheet_DB_%d", i),
 			TargetRangeAddress:   formatODSRangeAddress(af.sheet, af.startCol, af.startRow, af.endCol, af.endRow),
 			DisplayFilterButtons: "true",
-		})
+		}
+		if len(af.filters) > 0 {
+			dr.Filter = &oxml.Filter{}
+			for _, fc := range af.filters {
+				for _, v := range fc.values {
+					dr.Filter.Conditions = append(dr.Filter.Conditions, oxml.FilterCondition{
+						FieldNumber: fc.colIdx,
+						Operator:    "=",
+						Value:       v,
+					})
+				}
+			}
+		}
+		s := f.getSheet(af.sheet)
+		if s != nil && len(s.sortKeys) > 0 {
+			dr.Sort = &oxml.Sort{}
+			for _, sk := range s.sortKeys {
+				order := "ascending"
+				if sk.Descending {
+					order = "descending"
+				}
+				dr.Sort.SortBy = append(dr.Sort.SortBy, oxml.SortBy{
+					FieldNumber: sk.Column,
+					Order:       order,
+				})
+			}
+		}
+		allDatabaseRanges = append(allDatabaseRanges, dr)
 	}
 
 	for _, s := range f.sheets {
 		table := buildSheetTable(s, f.styles, &autoStyles)
 		allValidations = append(allValidations, buildSheetValidations(s)...)
 		doc.Body.Spreadsheet.Tables = append(doc.Body.Spreadsheet.Tables, table)
+
+		for _, cf := range s.conditionalFormats {
+			xcf := oxml.CalcextConditionalFormat{
+				TargetRangeAddress: formatConditionalTarget(s.name, cf.Range),
+			}
+			for _, rule := range cf.Rules {
+				xcf.Conditions = append(xcf.Conditions, oxml.CalcextCondition{
+					ApplyStyleName:  rule.StyleName,
+					Value:           rule.Value,
+					BaseCellAddress: rule.BaseCellAddress,
+				})
+			}
+			allConditionalFormats = append(allConditionalFormats, xcf)
+		}
 	}
 
 	for name, cs := range f.contentStyles {
@@ -895,7 +1084,15 @@ func (f *File) buildContentXML() (*oxml.DocumentContent, []oxml.Style, []oxml.Co
 		}
 	}
 
-	return doc, autoStyles, allValidations, allNamedRanges, allDatabaseRanges
+	return doc, autoStyles, allValidations, allNamedRanges, allDatabaseRanges, allConditionalFormats
+}
+
+func formatConditionalTarget(sheetName, cellRange string) string {
+	parts := strings.SplitN(cellRange, ":", 2)
+	if len(parts) == 2 {
+		return sheetName + "." + parts[0] + ":" + sheetName + "." + parts[1]
+	}
+	return sheetName + "." + cellRange
 }
 
 func buildSheetValidations(s *sheet) []oxml.ContentValidation {
@@ -931,6 +1128,10 @@ func buildSheetTable(s *sheet, sm *styleManager, autoStyles *[]oxml.Style) oxml.
 		Name: s.name,
 	}
 
+	if s.protected {
+		table.Protected = "true"
+	}
+
 	if s.printRange != nil {
 		table.PrintRanges = formatODSRangeAddress(s.name, s.printRange.startCol, s.printRange.startRow, s.printRange.endCol, s.printRange.endRow)
 	}
@@ -945,16 +1146,27 @@ func buildSheetTable(s *sheet, sm *styleManager, autoStyles *[]oxml.Style) oxml.
 
 	for i := range colCount {
 		col := oxml.TableColumn{}
-		if i < len(s.columns) && s.columns[i].width > 0 {
-			styleName := fmt.Sprintf("co%d", len(*autoStyles)+1)
-			*autoStyles = append(*autoStyles, oxml.Style{
-				Name:   styleName,
-				Family: "table-column",
-				TableColumnProperties: &oxml.TableColumnProperties{
-					ColumnWidth: fmt.Sprintf("%.4fcm", s.columns[i].width),
-				},
-			})
-			col.StyleName = styleName
+		if i < len(s.columns) {
+			c := s.columns[i]
+			if c.width > 0 || c.autoFit {
+				styleName := fmt.Sprintf("co%d", len(*autoStyles)+1)
+				tcp := &oxml.TableColumnProperties{}
+				if c.width > 0 {
+					tcp.ColumnWidth = fmt.Sprintf("%.4fcm", c.width)
+				}
+				if c.autoFit {
+					tcp.UseOptimalWidth = "true"
+				}
+				*autoStyles = append(*autoStyles, oxml.Style{
+					Name:                  styleName,
+					Family:                "table-column",
+					TableColumnProperties: tcp,
+				})
+				col.StyleName = styleName
+			}
+			if !c.visible {
+				col.Visibility = "collapse"
+			}
 		}
 		table.Columns = append(table.Columns, col)
 	}
@@ -967,6 +1179,10 @@ func buildSheetTable(s *sheet, sm *styleManager, autoStyles *[]oxml.Style) oxml.
 	for rowIdx := 1; rowIdx <= maxRow; rowIdx++ {
 		r, exists := s.rows[rowIdx]
 		xmlRow := oxml.TableRow{}
+
+		if exists && !r.visible {
+			xmlRow.Visibility = "collapse"
+		}
 
 		if exists && r.height > 0 {
 			styleName := fmt.Sprintf("ro%d", len(*autoStyles)+1)
@@ -1117,6 +1333,17 @@ func convertStyle(name string, s *Style) oxml.Style {
 		}
 	}
 
+	if s.Protected != nil {
+		if xs.TableCellProperties == nil {
+			xs.TableCellProperties = &oxml.TableCellProperties{}
+		}
+		if *s.Protected {
+			xs.TableCellProperties.CellProtect = "protected"
+		} else {
+			xs.TableCellProperties.CellProtect = "none"
+		}
+	}
+
 	return xs
 }
 
@@ -1136,9 +1363,9 @@ func formatBorder(b *Border) string {
 }
 
 func (f *File) marshalContent() ([]byte, error) {
-	doc, autoStyles, validations, namedRanges, databaseRanges := f.buildContentXML()
+	doc, autoStyles, validations, namedRanges, databaseRanges, conditionalFormats := f.buildContentXML()
 	var buf bytes.Buffer
-	if err := oxml.WriteContentXML(&buf, doc, autoStyles, validations, namedRanges, databaseRanges); err != nil {
+	if err := oxml.WriteContentXML(&buf, doc, autoStyles, validations, namedRanges, databaseRanges, conditionalFormats); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

@@ -5,6 +5,7 @@ type Style struct {
 	Fill      *Fill
 	Border    *Border
 	Alignment *Alignment
+	Protected *bool
 }
 
 type Font struct {

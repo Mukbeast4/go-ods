@@ -83,6 +83,20 @@ func columnNumberToName(col int) string {
 	return result
 }
 
+func Cell(col, row int) string {
+	name, err := CoordinatesToCellName(col, row)
+	if err != nil {
+		panic(fmt.Sprintf("goods.Cell(%d, %d): %v", col, row, err))
+	}
+	return name
+}
+
+func Cells(startCol, startRow, endCol, endRow int) string {
+	start := Cell(startCol, startRow)
+	end := Cell(endCol, endRow)
+	return start + ":" + end
+}
+
 func splitCellRange(rangeRef string) (startCol, startRow, endCol, endRow int, err error) {
 	parts := strings.SplitN(rangeRef, ":", 2)
 	if len(parts) == 1 {

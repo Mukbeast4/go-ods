@@ -71,6 +71,53 @@ func TestCoordinatesToCellName(t *testing.T) {
 	}
 }
 
+func TestCell(t *testing.T) {
+	tests := []struct {
+		col  int
+		row  int
+		want string
+	}{
+		{1, 1, "A1"},
+		{1, 3, "A3"},
+		{3, 10, "C10"},
+		{27, 1, "AA1"},
+	}
+
+	for _, tt := range tests {
+		got := Cell(tt.col, tt.row)
+		if got != tt.want {
+			t.Errorf("Cell(%d, %d) = %q, want %q", tt.col, tt.row, got, tt.want)
+		}
+	}
+}
+
+func TestCellPanicsOnInvalidCoords(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Cell(0, 1) should panic")
+		}
+	}()
+	Cell(0, 1)
+}
+
+func TestCells(t *testing.T) {
+	tests := []struct {
+		sc, sr, ec, er int
+		want           string
+	}{
+		{1, 1, 3, 10, "A1:C10"},
+		{1, 1, 1, 1, "A1:A1"},
+		{2, 5, 4, 8, "B5:D8"},
+	}
+
+	for _, tt := range tests {
+		got := Cells(tt.sc, tt.sr, tt.ec, tt.er)
+		if got != tt.want {
+			t.Errorf("Cells(%d,%d,%d,%d) = %q, want %q", tt.sc, tt.sr, tt.ec, tt.er, got, tt.want)
+		}
+	}
+}
+
 func TestRoundTrip(t *testing.T) {
 	for col := 1; col <= 1000; col++ {
 		name := columnNumberToName(col)

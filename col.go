@@ -15,7 +15,7 @@ func (f *File) SetColWidth(sheet, colName string, width float64) error {
 	}
 
 	for len(s.columns) < colIdx {
-		s.columns = append(s.columns, column{})
+		s.columns = append(s.columns, column{visible: true})
 	}
 
 	s.columns[colIdx-1].width = width
@@ -25,6 +25,92 @@ func (f *File) SetColWidth(sheet, colName string, width float64) error {
 	}
 
 	return nil
+}
+
+func (f *File) SetColVisible(sheet, colName string, visible bool) error {
+	if f.closed {
+		return ErrFileClosed
+	}
+	s := f.getSheet(sheet)
+	if s == nil {
+		return ErrSheetNotFound
+	}
+
+	colIdx := columnNameToNumber(colName)
+	if colIdx < 1 {
+		return ErrColumnOutOfRange
+	}
+
+	for len(s.columns) < colIdx {
+		s.columns = append(s.columns, column{visible: true})
+	}
+
+	s.columns[colIdx-1].visible = visible
+	return nil
+}
+
+func (f *File) GetColVisible(sheet, colName string) (bool, error) {
+	if f.closed {
+		return false, ErrFileClosed
+	}
+	s := f.getSheet(sheet)
+	if s == nil {
+		return false, ErrSheetNotFound
+	}
+
+	colIdx := columnNameToNumber(colName)
+	if colIdx < 1 {
+		return false, ErrColumnOutOfRange
+	}
+
+	if colIdx > len(s.columns) {
+		return true, nil
+	}
+
+	return s.columns[colIdx-1].visible, nil
+}
+
+func (f *File) SetColAutoFit(sheet, colName string, autoFit bool) error {
+	if f.closed {
+		return ErrFileClosed
+	}
+	s := f.getSheet(sheet)
+	if s == nil {
+		return ErrSheetNotFound
+	}
+
+	colIdx := columnNameToNumber(colName)
+	if colIdx < 1 {
+		return ErrColumnOutOfRange
+	}
+
+	for len(s.columns) < colIdx {
+		s.columns = append(s.columns, column{visible: true})
+	}
+
+	s.columns[colIdx-1].autoFit = autoFit
+	return nil
+}
+
+func (f *File) GetColAutoFit(sheet, colName string) (bool, error) {
+	if f.closed {
+		return false, ErrFileClosed
+	}
+	s := f.getSheet(sheet)
+	if s == nil {
+		return false, ErrSheetNotFound
+	}
+
+	colIdx := columnNameToNumber(colName)
+	if colIdx < 1 {
+		return false, ErrColumnOutOfRange
+	}
+
+	if colIdx > len(s.columns) {
+		return false, nil
+	}
+
+	return s.columns[colIdx-1].autoFit, nil
 }
 
 func (f *File) GetColWidth(sheet, colName string) (float64, error) {
@@ -76,14 +162,14 @@ func insertBlankColumns(cols []column, colIdx, count int) []column {
 	for i, c := range cols {
 		if i+1 == colIdx {
 			for range count {
-				newCols = append(newCols, column{})
+				newCols = append(newCols, column{visible: true})
 			}
 		}
 		newCols = append(newCols, c)
 	}
 	if colIdx > len(cols) {
 		for range count {
-			newCols = append(newCols, column{})
+			newCols = append(newCols, column{visible: true})
 		}
 	}
 	return newCols

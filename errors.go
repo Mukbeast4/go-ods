@@ -1,6 +1,9 @@
 package goods
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	ErrSheetNotFound      = errors.New("goods: sheet not found")
@@ -22,5 +25,31 @@ var (
 	ErrNamedRangeExists   = errors.New("goods: named range already exists")
 	ErrValidationNotFound = errors.New("goods: data validation not found")
 	ErrAutoFilterExists   = errors.New("goods: auto-filter already exists on this sheet")
-	ErrAutoFilterNotFound = errors.New("goods: auto-filter not found")
+	ErrAutoFilterNotFound       = errors.New("goods: auto-filter not found")
+	ErrConditionalFormatNotFound = errors.New("goods: conditional format not found")
 )
+
+type CellError struct {
+	Sheet string
+	Cell  string
+	Err   error
+}
+
+func (e *CellError) Error() string {
+	if e.Cell != "" {
+		return fmt.Sprintf("sheet %q cell %s: %v", e.Sheet, e.Cell, e.Err)
+	}
+	return fmt.Sprintf("sheet %q: %v", e.Sheet, e.Err)
+}
+
+func (e *CellError) Unwrap() error {
+	return e.Err
+}
+
+func sheetErr(sheet string, err error) *CellError {
+	return &CellError{Sheet: sheet, Err: err}
+}
+
+func cellErr(sheet, cell string, err error) *CellError {
+	return &CellError{Sheet: sheet, Cell: cell, Err: err}
+}

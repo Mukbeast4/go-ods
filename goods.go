@@ -1017,61 +1017,94 @@ func (f *File) buildContentXML() (*oxml.DocumentContent, []oxml.Style, []oxml.Co
 	}
 
 	for i, af := range f.autoFilters {
-		dr := oxml.DatabaseRange{
-			Name:                 fmt.Sprintf("__Anonymous_Sheet_DB_%d", i),
-			TargetRangeAddress:   formatODSRangeAddress(af.sheet, af.startCol, af.startRow, af.endCol, af.endRow),
-			DisplayFilterButtons: "true",
-		}
-		if len(af.filters) > 0 {
-			dr.Filter = &oxml.Filter{}
-			for _, fc := range af.filters {
-				for _, v := range fc.values {
-					dr.Filter.Conditions = append(dr.Filter.Conditions, oxml.FilterCondition{
-						FieldNumber: fc.colIdx,
-						Operator:    "=",
-						Value:       v,
-					})
-				}
-			}
-		}
-		s := f.getSheet(af.sheet)
-		if s != nil && len(s.sortKeys) > 0 {
-			dr.Sort = &oxml.Sort{}
-			for _, sk := range s.sortKeys {
-				order := "ascending"
-				if sk.Descending {
-					order = "descending"
-				}
-				dr.Sort.SortBy = append(dr.Sort.SortBy, oxml.SortBy{
-					FieldNumber: sk.Column,
-					Order:       order,
-				})
-			}
-		}
-		allDatabaseRanges = append(allDatabaseRanges, dr)
+		allDatabaseRanges = append(allDatabaseRanges, buildDatabaseRange(f, i, af))
 	}
 
 	for _, s := range f.sheets {
 		table := buildSheetTable(s, f.styles, &autoStyles)
 		allValidations = append(allValidations, buildSheetValidations(s)...)
 		doc.Body.Spreadsheet.Tables = append(doc.Body.Spreadsheet.Tables, table)
-
-		for _, cf := range s.conditionalFormats {
-			xcf := oxml.CalcextConditionalFormat{
-				TargetRangeAddress: formatConditionalTarget(s.name, cf.Range),
-			}
-			for _, rule := range cf.Rules {
-				xcf.Conditions = append(xcf.Conditions, oxml.CalcextCondition{
-					ApplyStyleName:  rule.StyleName,
-					Value:           rule.Value,
-					BaseCellAddress: rule.BaseCellAddress,
-				})
-			}
-			allConditionalFormats = append(allConditionalFormats, xcf)
-		}
+		allConditionalFormats = append(allConditionalFormats, buildSheetConditionalFormats(s)...)
 	}
 
-	for name, cs := range f.contentStyles {
+	autoStyles = mergeContentStyles(autoStyles, f.contentStyles)
+
+	return doc, autoStyles, allValidations, allNamedRanges, allDatabaseRanges, allConditionalFormats
+}
+
+func formatConditionalTarget(sheetName, cellRange string) string {
+	parts := strings.SplitN(cellRange, ":", 2)
+	if len(parts) == 2 {
+		return sheetName + "." + parts[0] + ":" + sheetName + "." + parts[1]
+	}
+	return sheetName + "." + cellRange
+}
+
+func buildDatabaseRange(f *File, idx int, af autoFilter) oxml.DatabaseRange {
+	dr := oxml.DatabaseRange{
+		Name:                 fmt.Sprintf("__Anonymous_Sheet_DB_%d", idx),
+		TargetRangeAddress:   formatODSRangeAddress(af.sheet, af.startCol, af.startRow, af.endCol, af.endRow),
+		DisplayFilterButtons: "true",
+	}
+	if len(af.filters) > 0 {
+		dr.Filter = buildFilter(af.filters)
+	}
+	s := f.getSheet(af.sheet)
+	if s != nil && len(s.sortKeys) > 0 {
+		dr.Sort = buildSort(s.sortKeys)
+	}
+	return dr
+}
+
+func buildFilter(filters []filterColumn) *oxml.Filter {
+	f := &oxml.Filter{}
+	for _, fc := range filters {
+		for _, v := range fc.values {
+			f.Conditions = append(f.Conditions, oxml.FilterCondition{
+				FieldNumber: fc.colIdx,
+				Operator:    "=",
+				Value:       v,
+			})
+		}
+	}
+	return f
+}
+
+func buildSort(keys []SortKey) *oxml.Sort {
+	s := &oxml.Sort{}
+	for _, sk := range keys {
+		order := "ascending"
+		if sk.Descending {
+			order = "descending"
+		}
+		s.SortBy = append(s.SortBy, oxml.SortBy{
+			FieldNumber: sk.Column,
+			Order:       order,
+		})
+	}
+	return s
+}
+
+func buildSheetConditionalFormats(s *sheet) []oxml.CalcextConditionalFormat {
+	var result []oxml.CalcextConditionalFormat
+	for _, cf := range s.conditionalFormats {
+		xcf := oxml.CalcextConditionalFormat{
+			TargetRangeAddress: formatConditionalTarget(s.name, cf.Range),
+		}
+		for _, rule := range cf.Rules {
+			xcf.Conditions = append(xcf.Conditions, oxml.CalcextCondition{
+				ApplyStyleName:  rule.StyleName,
+				Value:           rule.Value,
+				BaseCellAddress: rule.BaseCellAddress,
+			})
+		}
+		result = append(result, xcf)
+	}
+	return result
+}
+
+func mergeContentStyles(autoStyles []oxml.Style, contentStyles map[string]oxml.Style) []oxml.Style {
+	for name, cs := range contentStyles {
 		found := false
 		for _, as := range autoStyles {
 			if as.Name == name {
@@ -1083,16 +1116,7 @@ func (f *File) buildContentXML() (*oxml.DocumentContent, []oxml.Style, []oxml.Co
 			autoStyles = append(autoStyles, cs)
 		}
 	}
-
-	return doc, autoStyles, allValidations, allNamedRanges, allDatabaseRanges, allConditionalFormats
-}
-
-func formatConditionalTarget(sheetName, cellRange string) string {
-	parts := strings.SplitN(cellRange, ":", 2)
-	if len(parts) == 2 {
-		return sheetName + "." + parts[0] + ":" + sheetName + "." + parts[1]
-	}
-	return sheetName + "." + cellRange
+	return autoStyles
 }
 
 func buildSheetValidations(s *sheet) []oxml.ContentValidation {
@@ -1123,6 +1147,75 @@ func buildSheetValidations(s *sheet) []oxml.ContentValidation {
 	return validations
 }
 
+func sheetColCount(s *sheet) int {
+	colCount := s.maxCol
+	if len(s.columns) > colCount {
+		colCount = len(s.columns)
+	}
+	if colCount < 1 {
+		colCount = 1
+	}
+	return colCount
+}
+
+func buildTableColumn(c column, autoStyles *[]oxml.Style) oxml.TableColumn {
+	col := oxml.TableColumn{}
+	if c.width > 0 || c.autoFit {
+		styleName := fmt.Sprintf("co%d", len(*autoStyles)+1)
+		tcp := &oxml.TableColumnProperties{}
+		if c.width > 0 {
+			tcp.ColumnWidth = fmt.Sprintf("%.4fcm", c.width)
+		}
+		if c.autoFit {
+			tcp.UseOptimalWidth = "true"
+		}
+		*autoStyles = append(*autoStyles, oxml.Style{
+			Name:                  styleName,
+			Family:                "table-column",
+			TableColumnProperties: tcp,
+		})
+		col.StyleName = styleName
+	}
+	if !c.visible {
+		col.Visibility = "collapse"
+	}
+	return col
+}
+
+func buildTableRow(s *sheet, rowIdx, colCount int, sm *styleManager, autoStyles *[]oxml.Style) oxml.TableRow {
+	r, exists := s.rows[rowIdx]
+	xmlRow := oxml.TableRow{}
+
+	if exists && !r.visible {
+		xmlRow.Visibility = "collapse"
+	}
+
+	if exists && r.height > 0 {
+		styleName := fmt.Sprintf("ro%d", len(*autoStyles)+1)
+		*autoStyles = append(*autoStyles, oxml.Style{
+			Name:   styleName,
+			Family: "table-row",
+			TableRowProperties: &oxml.TableRowProperties{
+				RowHeight:        fmt.Sprintf("%.4fcm", r.height),
+				UseOptimalHeight: "false",
+			},
+		})
+		xmlRow.StyleName = styleName
+	}
+
+	for colIdx := 1; colIdx <= colCount; colIdx++ {
+		xmlCell := oxml.TableCell{}
+		if exists {
+			if c, ok := r.cells[colIdx]; ok {
+				xmlCell = buildXMLCell(c, sm, autoStyles)
+			}
+		}
+		xmlRow.Cells = append(xmlRow.Cells, xmlCell)
+	}
+
+	return xmlRow
+}
+
 func buildSheetTable(s *sheet, sm *styleManager, autoStyles *[]oxml.Style) oxml.Table {
 	table := oxml.Table{
 		Name: s.name,
@@ -1136,39 +1229,14 @@ func buildSheetTable(s *sheet, sm *styleManager, autoStyles *[]oxml.Style) oxml.
 		table.PrintRanges = formatODSRangeAddress(s.name, s.printRange.startCol, s.printRange.startRow, s.printRange.endCol, s.printRange.endRow)
 	}
 
-	colCount := s.maxCol
-	if len(s.columns) > colCount {
-		colCount = len(s.columns)
-	}
-	if colCount < 1 {
-		colCount = 1
-	}
+	colCount := sheetColCount(s)
 
 	for i := range colCount {
-		col := oxml.TableColumn{}
 		if i < len(s.columns) {
-			c := s.columns[i]
-			if c.width > 0 || c.autoFit {
-				styleName := fmt.Sprintf("co%d", len(*autoStyles)+1)
-				tcp := &oxml.TableColumnProperties{}
-				if c.width > 0 {
-					tcp.ColumnWidth = fmt.Sprintf("%.4fcm", c.width)
-				}
-				if c.autoFit {
-					tcp.UseOptimalWidth = "true"
-				}
-				*autoStyles = append(*autoStyles, oxml.Style{
-					Name:                  styleName,
-					Family:                "table-column",
-					TableColumnProperties: tcp,
-				})
-				col.StyleName = styleName
-			}
-			if !c.visible {
-				col.Visibility = "collapse"
-			}
+			table.Columns = append(table.Columns, buildTableColumn(s.columns[i], autoStyles))
+		} else {
+			table.Columns = append(table.Columns, oxml.TableColumn{})
 		}
-		table.Columns = append(table.Columns, col)
 	}
 
 	maxRow := s.maxRow
@@ -1177,39 +1245,7 @@ func buildSheetTable(s *sheet, sm *styleManager, autoStyles *[]oxml.Style) oxml.
 	}
 
 	for rowIdx := 1; rowIdx <= maxRow; rowIdx++ {
-		r, exists := s.rows[rowIdx]
-		xmlRow := oxml.TableRow{}
-
-		if exists && !r.visible {
-			xmlRow.Visibility = "collapse"
-		}
-
-		if exists && r.height > 0 {
-			styleName := fmt.Sprintf("ro%d", len(*autoStyles)+1)
-			*autoStyles = append(*autoStyles, oxml.Style{
-				Name:   styleName,
-				Family: "table-row",
-				TableRowProperties: &oxml.TableRowProperties{
-					RowHeight:        fmt.Sprintf("%.4fcm", r.height),
-					UseOptimalHeight: "false",
-				},
-			})
-			xmlRow.StyleName = styleName
-		}
-
-		for colIdx := 1; colIdx <= colCount; colIdx++ {
-			xmlCell := oxml.TableCell{}
-
-			if exists {
-				if c, ok := r.cells[colIdx]; ok {
-					xmlCell = buildXMLCell(c, sm, autoStyles)
-				}
-			}
-
-			xmlRow.Cells = append(xmlRow.Cells, xmlCell)
-		}
-
-		table.Rows = append(table.Rows, xmlRow)
+		table.Rows = append(table.Rows, buildTableRow(s, rowIdx, colCount, sm, autoStyles))
 	}
 
 	return table

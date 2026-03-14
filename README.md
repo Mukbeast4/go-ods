@@ -16,9 +16,13 @@ Pure Go library for reading, writing, and evaluating ODS (OpenDocument Spreadshe
 - Formula recalculation with dependency graph and circular reference detection
 - Auto-recalc mode: formulas update automatically when cell values change
 - Sheet management (create, copy, rename, delete)
-- Row and column operations (insert, remove, resize)
+- Row and column operations (insert, remove, resize, hide/show)
+- Column auto-fit (optimal width)
 - Cell merging and unmerging
 - Cell styling (font, fill, border, alignment)
+- Sheet and cell protection
+- Conditional formatting (calcext namespace)
+- Auto-filter with filter criteria and sort keys
 - Streaming row iterator for large files
 - Document properties (title, creator, description)
 
@@ -149,7 +153,7 @@ style := &ods.Style{
 }
 
 styleID, _ := f.NewStyle(style)
-f.SetCellStyle("Sheet1", "A1", styleID)
+f.SetCellStyle("Sheet1", "A1", "A1", styleID)
 ```
 
 ## Row and Column Operations
@@ -158,6 +162,57 @@ f.SetCellStyle("Sheet1", "A1", styleID)
 f.InsertRows("Sheet1", 3, 2)       // Insert 2 rows at row 3
 f.RemoveRow("Sheet1", 5)           // Remove row 5
 f.SetColWidth("Sheet1", "B", 5.0)  // Set column B width
+
+f.SetRowVisible("Sheet1", 2, false)  // Hide row 2
+f.SetColVisible("Sheet1", "C", false) // Hide column C
+f.SetColAutoFit("Sheet1", "A", true)  // Auto-fit column A width
+```
+
+## Sheet Protection
+
+```go
+f.SetSheetProtection("Sheet1", true)
+
+protected, _ := f.IsSheetProtected("Sheet1") // true
+
+locked := true
+styleID, _ := f.NewStyle(&ods.Style{
+	Protected: &locked,
+})
+f.SetCellStyle("Sheet1", "A1", "A1", styleID)
+```
+
+## Conditional Formatting
+
+```go
+rules := []ods.ConditionalRule{
+	{Value: "of:cell-content()>90", StyleName: "good", BaseCellAddress: "Sheet1.A1"},
+	{Value: "of:cell-content()<50", StyleName: "bad", BaseCellAddress: "Sheet1.A1"},
+}
+f.SetConditionalFormat("Sheet1", "A1:A100", rules)
+
+formats, _ := f.GetConditionalFormats("Sheet1")
+f.RemoveConditionalFormat("Sheet1", "A1:A100")
+```
+
+## Auto-Filter, Filter Criteria and Sort
+
+```go
+f.SetAutoFilter("Sheet1", "A1", "D100")
+
+f.SetFilterCriteria("Sheet1", []ods.FilterCriteria{
+	{Column: 0, Values: []string{"Alice"}},
+})
+
+f.SetSort("Sheet1", []ods.SortKey{
+	{Column: 1, Descending: true},
+})
+
+criteria, _ := f.GetFilterCriteria("Sheet1")
+sortKeys, _ := f.GetSort("Sheet1")
+
+f.ClearFilterCriteria("Sheet1")
+f.RemoveSort("Sheet1")
 ```
 
 ## Contributing

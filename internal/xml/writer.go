@@ -828,6 +828,47 @@ func writeNamedExpressions(xw *Writer, namedRanges []NamedRange) error {
 	return xw.EndElement("table", "named-expressions")
 }
 
+func writeFilterConditions(xw *Writer, filter *Filter) error {
+	if err := xw.StartElement("table", "filter"); err != nil {
+		return err
+	}
+	for _, fc := range filter.Conditions {
+		fcAttrs := []xml.Attr{
+			Attr("table", "field-number", fmt.Sprintf("%d", fc.FieldNumber)),
+			Attr("table", "operator", fc.Operator),
+			Attr("table", "value", fc.Value),
+		}
+		if err := xw.StartElement("table", "filter-condition", fcAttrs...); err != nil {
+			return err
+		}
+		if err := xw.EndElement("table", "filter-condition"); err != nil {
+			return err
+		}
+	}
+	return xw.EndElement("table", "filter")
+}
+
+func writeSortKeys(xw *Writer, sort *Sort) error {
+	if err := xw.StartElement("table", "sort"); err != nil {
+		return err
+	}
+	for _, sb := range sort.SortBy {
+		sbAttrs := []xml.Attr{
+			Attr("table", "field-number", fmt.Sprintf("%d", sb.FieldNumber)),
+		}
+		if sb.Order != "" {
+			sbAttrs = append(sbAttrs, Attr("table", "order", sb.Order))
+		}
+		if err := xw.StartElement("table", "sort-by", sbAttrs...); err != nil {
+			return err
+		}
+		if err := xw.EndElement("table", "sort-by"); err != nil {
+			return err
+		}
+	}
+	return xw.EndElement("table", "sort")
+}
+
 func writeDatabaseRanges(xw *Writer, ranges []DatabaseRange) error {
 	if err := xw.StartElement("table", "database-ranges"); err != nil {
 		return err
@@ -844,46 +885,13 @@ func writeDatabaseRanges(xw *Writer, ranges []DatabaseRange) error {
 		}
 
 		if dr.Filter != nil && len(dr.Filter.Conditions) > 0 {
-			if err := xw.StartElement("table", "filter"); err != nil {
-				return err
-			}
-			for _, fc := range dr.Filter.Conditions {
-				fcAttrs := []xml.Attr{
-					Attr("table", "field-number", fmt.Sprintf("%d", fc.FieldNumber)),
-					Attr("table", "operator", fc.Operator),
-					Attr("table", "value", fc.Value),
-				}
-				if err := xw.StartElement("table", "filter-condition", fcAttrs...); err != nil {
-					return err
-				}
-				if err := xw.EndElement("table", "filter-condition"); err != nil {
-					return err
-				}
-			}
-			if err := xw.EndElement("table", "filter"); err != nil {
+			if err := writeFilterConditions(xw, dr.Filter); err != nil {
 				return err
 			}
 		}
 
 		if dr.Sort != nil && len(dr.Sort.SortBy) > 0 {
-			if err := xw.StartElement("table", "sort"); err != nil {
-				return err
-			}
-			for _, sb := range dr.Sort.SortBy {
-				sbAttrs := []xml.Attr{
-					Attr("table", "field-number", fmt.Sprintf("%d", sb.FieldNumber)),
-				}
-				if sb.Order != "" {
-					sbAttrs = append(sbAttrs, Attr("table", "order", sb.Order))
-				}
-				if err := xw.StartElement("table", "sort-by", sbAttrs...); err != nil {
-					return err
-				}
-				if err := xw.EndElement("table", "sort-by"); err != nil {
-					return err
-				}
-			}
-			if err := xw.EndElement("table", "sort"); err != nil {
+			if err := writeSortKeys(xw, dr.Sort); err != nil {
 				return err
 			}
 		}

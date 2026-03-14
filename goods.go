@@ -264,8 +264,8 @@ type xmlFilterCondition struct {
 }
 
 type xmlFilter struct {
-	XMLName    xml.Name               `xml:"filter"`
-	Conditions []xmlFilterCondition   `xml:"filter-condition"`
+	XMLName    xml.Name             `xml:"filter"`
+	Conditions []xmlFilterCondition `xml:"filter-condition"`
 }
 
 type xmlSortBy struct {
@@ -295,14 +295,14 @@ type xmlCalcextCondition struct {
 }
 
 type xmlCalcextConditionalFormat struct {
-	XMLName            xml.Name                `xml:"conditional-format"`
-	TargetRangeAddress string                  `xml:"target-range-address,attr"`
-	Conditions         []xmlCalcextCondition   `xml:"condition"`
+	XMLName            xml.Name              `xml:"conditional-format"`
+	TargetRangeAddress string                `xml:"target-range-address,attr"`
+	Conditions         []xmlCalcextCondition `xml:"condition"`
 }
 
 type xmlCalcextConditionalFormats struct {
-	XMLName xml.Name                       `xml:"conditional-formats"`
-	Formats []xmlCalcextConditionalFormat  `xml:"conditional-format"`
+	XMLName xml.Name                      `xml:"conditional-formats"`
+	Formats []xmlCalcextConditionalFormat `xml:"conditional-format"`
 }
 
 type xmlAutoStyles struct {
@@ -315,12 +315,12 @@ type xmlTableColumnProps struct {
 }
 
 type xmlStyleDef struct {
-	XMLName               xml.Name                `xml:"style"`
-	Name                  string                  `xml:"name,attr"`
-	Family                string                  `xml:"family,attr"`
-	ParentStyleName       string                  `xml:"parent-style-name,attr"`
-	DataStyleName         string                  `xml:"data-style-name,attr"`
-	TableColumnProperties *xmlTableColumnProps     `xml:"table-column-properties"`
+	XMLName               xml.Name             `xml:"style"`
+	Name                  string               `xml:"name,attr"`
+	Family                string               `xml:"family,attr"`
+	ParentStyleName       string               `xml:"parent-style-name,attr"`
+	DataStyleName         string               `xml:"data-style-name,attr"`
+	TableColumnProperties *xmlTableColumnProps `xml:"table-column-properties"`
 }
 
 type xmlContent struct {

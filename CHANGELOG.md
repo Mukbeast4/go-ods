@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-24
+
 ### Added
 - Package-level godoc and per-symbol doc comments for every exported type,
   function, method, variable and constant.
@@ -16,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SetCellDateTime`, `SetCellDuration`.
 - `.golangci.yml` and a golangci-lint CI job. CI matrix now covers Linux,
   macOS and Windows.
+- Governance files: `CHANGELOG.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`.
 
 ### Changed
 - CI workflow: `go vet` step replaced by a golangci-lint-action run.
@@ -67,7 +70,8 @@ Initial release.
 - Data validation, named ranges, freeze panes, print ranges, page setup.
 - Row iterator for streaming large sheets.
 
-[Unreleased]: https://github.com/Mukbeast4/go-ods/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Mukbeast4/go-ods/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Mukbeast4/go-ods/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Mukbeast4/go-ods/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/Mukbeast4/go-ods/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Mukbeast4/go-ods/compare/v0.1.0...v0.1.1

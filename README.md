@@ -260,6 +260,22 @@ for _, img := range images {
 f.RemoveImages("Sheet1", "B2")
 ```
 
+## Examples
+
+A collection of runnable samples lives under [`examples/`](examples). Each sub-directory is a standalone `main` package:
+
+```bash
+go run ./examples/quickstart   # cells, formula, save
+go run ./examples/formulas     # aggregation functions
+go run ./examples/styling      # fonts, fills, borders, rotation
+go run ./examples/autofilter   # filter + sort
+go run ./examples/streaming    # 10k rows via AppendRows + RowIterator
+go run ./examples/roundtrip    # open -> mutate -> save
+go run ./examples/images       # embed a PNG
+```
+
+See [examples/README.md](examples/README.md) for a breakdown of each sample.
+
 ## Contributing
 
 We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before submitting a pull request.

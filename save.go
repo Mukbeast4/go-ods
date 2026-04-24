@@ -130,5 +130,9 @@ func (f *File) buildZipEntries() ([]ozip.WriteEntry, error) {
 		entries = append(entries, ozip.WriteEntry{Name: name, Data: data})
 	}
 
+	for name, data := range f.images {
+		entries = append(entries, ozip.WriteEntry{Name: name, Data: data})
+	}
+
 	return entries, nil
 }

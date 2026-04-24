@@ -11,6 +11,9 @@ var (
 	reRangeRef = regexp.MustCompile(`\[\.([A-Z]+)(\d+):\.([A-Z]+)(\d+)\]`)
 )
 
+// CleanFormula rewrites an ODS formula into a canonical form closer to common
+// spreadsheet syntax: "[.A1:.B3]" becomes "A1:B3", "of:=" prefix is stripped,
+// XML entities are decoded and ";" argument separators become ", ".
 func CleanFormula(odsFormula string) string {
 	f := strings.TrimPrefix(odsFormula, "of:=")
 	f = strings.TrimPrefix(f, "of:")
@@ -29,11 +32,15 @@ func CleanFormula(odsFormula string) string {
 	return f
 }
 
+// AdaptFormula rewrites row indices that equal fromRow into toRow, preserving
+// the ODS formula syntax. Use it to replicate a formula across rows.
 func AdaptFormula(formula string, fromRow, toRow int) string {
 	re := regexp.MustCompile(`(\.\s*[A-Z]+)` + strconv.Itoa(fromRow) + `([\]:])`)
 	return re.ReplaceAllString(formula, "${1}"+strconv.Itoa(toRow)+"${2}")
 }
 
+// GetCleanFormula returns the cell formula run through CleanFormula. It
+// returns "" when the cell has no formula.
 func (f *File) GetCleanFormula(sheet, cellRef string) (string, error) {
 	raw, err := f.GetCellFormula(sheet, cellRef)
 	if err != nil {
@@ -45,6 +52,8 @@ func (f *File) GetCleanFormula(sheet, cellRef string) (string, error) {
 	return CleanFormula(raw), nil
 }
 
+// GetSheetFormulas returns a snapshot of every formula on the sheet keyed by
+// A1-style cell reference. Values are run through CleanFormula.
 func (f *File) GetSheetFormulas(sheet string) (map[string]string, error) {
 	if f.closed {
 		return nil, ErrFileClosed
@@ -70,6 +79,8 @@ func (f *File) GetSheetFormulas(sheet string) (map[string]string, error) {
 	return formulas, nil
 }
 
+// CopyRowFormulas copies every formula from fromRow into toRow, adapting row
+// indices so references to fromRow become references to toRow.
 func (f *File) CopyRowFormulas(sheet string, fromRow, toRow int) error {
 	if f.closed {
 		return ErrFileClosed

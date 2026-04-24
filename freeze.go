@@ -1,5 +1,7 @@
 package goods
 
+// SetFreezePane pins rows above and columns left of cellRef so they stay
+// visible when scrolling. Pass "B2" to freeze the first row and the first column.
 func (f *File) SetFreezePane(sheet, cellRef string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -19,6 +21,8 @@ func (f *File) SetFreezePane(sheet, cellRef string) error {
 	return nil
 }
 
+// GetFreezePane returns the frozen column count and row count for the sheet.
+// Both are 0 when no pane is frozen.
 func (f *File) GetFreezePane(sheet string) (int, int, error) {
 	if f.closed {
 		return 0, 0, ErrFileClosed
@@ -31,6 +35,7 @@ func (f *File) GetFreezePane(sheet string) (int, int, error) {
 	return s.freezeCol, s.freezeRow, nil
 }
 
+// RemoveFreezePane clears any frozen pane configuration on the sheet.
 func (f *File) RemoveFreezePane(sheet string) error {
 	if f.closed {
 		return ErrFileClosed

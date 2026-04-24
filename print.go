@@ -7,6 +7,10 @@ type printRange struct {
 	endRow   int
 }
 
+// PageSetup controls the printed layout of a sheet.
+//
+// Orientation is "portrait" or "landscape". PaperWidth and PaperHeight accept
+// ODS dimensions such as "21cm" or "8.5in". Margins are in centimeters.
 type PageSetup struct {
 	Orientation  string
 	PaperWidth   string
@@ -17,6 +21,8 @@ type PageSetup struct {
 	MarginRight  float64
 }
 
+// SetPrintRange configures the cells printed for the sheet. Any previous range
+// is replaced.
 func (f *File) SetPrintRange(sheet, topLeft, bottomRight string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -42,6 +48,8 @@ func (f *File) SetPrintRange(sheet, topLeft, bottomRight string) error {
 	return nil
 }
 
+// GetPrintRange returns the configured print range as A1-style cells. Both
+// results are "" when no range is set.
 func (f *File) GetPrintRange(sheet string) (string, string, error) {
 	if f.closed {
 		return "", "", ErrFileClosed
@@ -66,6 +74,7 @@ func (f *File) GetPrintRange(sheet string) (string, string, error) {
 	return tl, br, nil
 }
 
+// RemovePrintRange clears the print range configured on the sheet.
 func (f *File) RemovePrintRange(sheet string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -79,6 +88,8 @@ func (f *File) RemovePrintRange(sheet string) error {
 	return nil
 }
 
+// SetPageSetup stores a page setup configuration for the sheet. A copy of
+// setup is kept internally so later mutations to setup have no effect.
 func (f *File) SetPageSetup(sheet string, setup *PageSetup) error {
 	if f.closed {
 		return ErrFileClosed
@@ -93,6 +104,8 @@ func (f *File) SetPageSetup(sheet string, setup *PageSetup) error {
 	return nil
 }
 
+// GetPageSetup returns a copy of the page setup configured on the sheet, or
+// nil when none is set.
 func (f *File) GetPageSetup(sheet string) (*PageSetup, error) {
 	if f.closed {
 		return nil, ErrFileClosed

@@ -1,5 +1,8 @@
 package goods
 
+// SetColWidth sets the explicit width in centimeters for the column identified
+// by letter (e.g. "A", "AB"). Missing intermediate columns are created with
+// default settings.
 func (f *File) SetColWidth(sheet, colName string, width float64) error {
 	if f.closed {
 		return ErrFileClosed
@@ -27,6 +30,7 @@ func (f *File) SetColWidth(sheet, colName string, width float64) error {
 	return nil
 }
 
+// SetColVisible hides or shows a column.
 func (f *File) SetColVisible(sheet, colName string, visible bool) error {
 	if f.closed {
 		return ErrFileClosed
@@ -49,6 +53,8 @@ func (f *File) SetColVisible(sheet, colName string, visible bool) error {
 	return nil
 }
 
+// GetColVisible reports whether the column is visible. Columns with no
+// explicit setting are visible by default.
 func (f *File) GetColVisible(sheet, colName string) (bool, error) {
 	if f.closed {
 		return false, ErrFileClosed
@@ -70,6 +76,7 @@ func (f *File) GetColVisible(sheet, colName string) (bool, error) {
 	return s.columns[colIdx-1].visible, nil
 }
 
+// SetColAutoFit toggles automatic column-width adjustment based on cell content.
 func (f *File) SetColAutoFit(sheet, colName string, autoFit bool) error {
 	if f.closed {
 		return ErrFileClosed
@@ -92,6 +99,7 @@ func (f *File) SetColAutoFit(sheet, colName string, autoFit bool) error {
 	return nil
 }
 
+// GetColAutoFit reports whether the column is configured to auto-fit its content.
 func (f *File) GetColAutoFit(sheet, colName string) (bool, error) {
 	if f.closed {
 		return false, ErrFileClosed
@@ -113,6 +121,8 @@ func (f *File) GetColAutoFit(sheet, colName string) (bool, error) {
 	return s.columns[colIdx-1].autoFit, nil
 }
 
+// GetColWidth returns the explicit width of a column in centimeters. It
+// returns 0 when the column uses the default width.
 func (f *File) GetColWidth(sheet, colName string) (float64, error) {
 	if f.closed {
 		return 0, ErrFileClosed
@@ -189,6 +199,9 @@ func shiftCellsOnInsertCol(s *sheet, colIdx, count int) {
 	}
 }
 
+// InsertCols inserts count blank columns starting at colName. Merges, named
+// ranges, auto-filters, print range and formula references are shifted
+// accordingly.
 func (f *File) InsertCols(sheet, colName string, count int) error {
 	if f.closed {
 		return ErrFileClosed
@@ -321,6 +334,9 @@ func shrinkPrintRangeOnRemoveCol(s *sheet, colIdx int) {
 	}
 }
 
+// RemoveCol deletes the column identified by colName and shifts subsequent
+// columns, merges, named ranges, auto-filters, print range and formula
+// references to the left.
 func (f *File) RemoveCol(sheet, colName string) error {
 	if f.closed {
 		return ErrFileClosed

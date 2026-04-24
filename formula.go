@@ -1,5 +1,8 @@
 package goods
 
+// SetCellFormula stores an ODS formula (e.g. "SUM([.A1:.A5])") on the cell.
+// The cached result is not updated automatically unless auto-recalc is enabled
+// via SetAutoRecalc; otherwise call RecalcSheet or RecalcAll before saving.
 func (f *File) SetCellFormula(sheet, cellRef, formula string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -32,6 +35,8 @@ func (f *File) SetCellFormula(sheet, cellRef, formula string) error {
 	return nil
 }
 
+// GetCellFormula returns the raw ODS formula stored on the cell, or "" when
+// the cell has no formula.
 func (f *File) GetCellFormula(sheet, cellRef string) (string, error) {
 	if f.closed {
 		return "", ErrFileClosed

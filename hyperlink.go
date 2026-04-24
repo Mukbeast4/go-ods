@@ -1,10 +1,14 @@
 package goods
 
+// Hyperlink binds a URL to a cell. Display is the visible text; if empty the
+// URL itself is shown.
 type Hyperlink struct {
 	URL     string
 	Display string
 }
 
+// SetCellHyperlink attaches a hyperlink to a cell. When display is empty the
+// URL is used. The cell value is set to display if the cell was previously empty.
 func (f *File) SetCellHyperlink(sheet, cellRef, url, display string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -46,6 +50,8 @@ func (f *File) SetCellHyperlink(sheet, cellRef, url, display string) error {
 	return nil
 }
 
+// GetCellHyperlink returns the URL and display text of the hyperlink attached
+// to a cell. Both values are "" when no hyperlink is set.
 func (f *File) GetCellHyperlink(sheet, cellRef string) (string, string, error) {
 	if f.closed {
 		return "", "", ErrFileClosed
@@ -68,6 +74,8 @@ func (f *File) GetCellHyperlink(sheet, cellRef string) (string, string, error) {
 	return c.hyperlink.URL, c.hyperlink.Display, nil
 }
 
+// RemoveCellHyperlink clears the hyperlink attached to the cell if any. The
+// cell value is left untouched.
 func (f *File) RemoveCellHyperlink(sheet, cellRef string) error {
 	if f.closed {
 		return ErrFileClosed

@@ -1,3 +1,23 @@
+// Package goods reads and writes ODS (OpenDocument Spreadsheet) files.
+//
+// The entry points are [NewFile] to create an empty document and [OpenFile],
+// [OpenBytes] or [OpenReader] to load an existing one. Once obtained, a [*File]
+// exposes cell, sheet, formula, style, image, validation and other APIs. Call
+// [*File.Save] or [*File.SaveAs] to persist the document.
+//
+// Basic usage:
+//
+//	f := goods.NewFile()
+//	f.NewSheet("Sheet1")
+//	f.SetCellStr("Sheet1", "A1", "Product")
+//	f.SetCellFloat("Sheet1", "B1", 10.5)
+//	f.SetCellFormula("Sheet1", "C1", "SUM([.B1])")
+//	f.RecalcSheet("Sheet1")
+//	f.SaveAs("out.ods")
+//
+// Cell references use A1 notation. Formulas are stored using ODS syntax
+// ("[.A1]" for a reference); the package ships with a built-in evaluator that
+// supports 60+ functions — see [*File.EvaluateFormula] and [*File.RecalcAll].
 package goods
 
 import (
@@ -13,6 +33,9 @@ import (
 	ozip "github.com/mukbeast4/go-ods/internal/zip"
 )
 
+// File is an in-memory representation of an ODS document. It is not safe for
+// concurrent use: wrap accesses behind a mutex if multiple goroutines share a
+// File.
 type File struct {
 	sheets        []*sheet
 	activeSheet   int
@@ -92,6 +115,7 @@ type mergeRange struct {
 	endCol, endRow     int
 }
 
+// NewFile returns an empty workbook with a single default sheet named "Sheet1".
 func NewFile() *File {
 	f := &File{
 		sheets:   make([]*sheet, 0),
@@ -118,6 +142,7 @@ func NewFile() *File {
 	return f
 }
 
+// OpenFile reads and parses the ODS document located at path.
 func OpenFile(path string) (*File, error) {
 	result, err := ozip.ReadFile(path)
 	if err != nil {
@@ -132,6 +157,9 @@ func OpenFile(path string) (*File, error) {
 	return f, nil
 }
 
+// OpenReader parses an ODS document from an io.ReaderAt of the given size.
+// Use it to read ODS content from sources that are not files (e.g. HTTP bodies
+// buffered into bytes.Reader).
 func OpenReader(r io.ReaderAt, size int64) (*File, error) {
 	result, err := ozip.ReadFromReader(r, size)
 	if err != nil {
@@ -140,6 +168,7 @@ func OpenReader(r io.ReaderAt, size int64) (*File, error) {
 	return parseZipResult(result)
 }
 
+// OpenBytes parses an ODS document from an in-memory byte slice.
 func OpenBytes(data []byte) (*File, error) {
 	result, err := ozip.ReadBytes(data)
 	if err != nil {

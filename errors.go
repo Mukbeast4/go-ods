@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// Sentinel errors returned by the package. Callers may compare with errors.Is.
 var (
 	ErrSheetNotFound             = errors.New("goods: sheet not found")
 	ErrSheetExists               = errors.New("goods: sheet already exists")
@@ -29,12 +30,15 @@ var (
 	ErrConditionalFormatNotFound = errors.New("goods: conditional format not found")
 )
 
+// CellError wraps an underlying error with the sheet name and cell reference
+// where the failure occurred. The wrapped error is accessible via errors.Unwrap.
 type CellError struct {
 	Sheet string
 	Cell  string
 	Err   error
 }
 
+// Error returns the error message including the sheet and, when available, the cell reference.
 func (e *CellError) Error() string {
 	if e.Cell != "" {
 		return fmt.Sprintf("sheet %q cell %s: %v", e.Sheet, e.Cell, e.Err)
@@ -42,6 +46,7 @@ func (e *CellError) Error() string {
 	return fmt.Sprintf("sheet %q: %v", e.Sheet, e.Err)
 }
 
+// Unwrap returns the underlying error for use with errors.Is and errors.As.
 func (e *CellError) Unwrap() error {
 	return e.Err
 }

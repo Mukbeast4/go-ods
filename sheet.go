@@ -1,5 +1,8 @@
 package goods
 
+// NewSheet appends a new empty sheet with the given name and returns its zero-
+// based index. It returns ErrSheetExists when the name is already in use and
+// ErrSheetNameEmpty when name is empty.
 func (f *File) NewSheet(name string) (int, error) {
 	if f.closed {
 		return -1, ErrFileClosed
@@ -20,6 +23,8 @@ func (f *File) NewSheet(name string) (int, error) {
 	return len(f.sheets) - 1, nil
 }
 
+// DeleteSheet removes the sheet and any named ranges or auto-filters attached
+// to it. It returns ErrNoSheets if the workbook would end up empty.
 func (f *File) DeleteSheet(name string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -57,6 +62,7 @@ func (f *File) DeleteSheet(name string) error {
 	return ErrSheetNotFound
 }
 
+// GetSheetList returns the ordered list of sheet names.
 func (f *File) GetSheetList() []string {
 	names := make([]string, len(f.sheets))
 	for i, s := range f.sheets {
@@ -65,6 +71,7 @@ func (f *File) GetSheetList() []string {
 	return names
 }
 
+// GetSheetName returns the sheet name at the given zero-based index.
 func (f *File) GetSheetName(index int) (string, error) {
 	if index < 0 || index >= len(f.sheets) {
 		return "", ErrSheetNotFound
@@ -72,6 +79,8 @@ func (f *File) GetSheetName(index int) (string, error) {
 	return f.sheets[index].name, nil
 }
 
+// SetSheetName renames a sheet and updates any named ranges and auto-filters
+// that reference it.
 func (f *File) SetSheetName(oldName, newName string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -104,10 +113,14 @@ func (f *File) SetSheetName(oldName, newName string) error {
 	return nil
 }
 
+// GetActiveSheetIndex returns the zero-based index of the sheet that will be
+// shown when the document is opened.
 func (f *File) GetActiveSheetIndex() int {
 	return f.activeSheet
 }
 
+// SetActiveSheet selects the sheet that will be shown when the document is
+// opened.
 func (f *File) SetActiveSheet(index int) error {
 	if index < 0 || index >= len(f.sheets) {
 		return ErrSheetNotFound
@@ -116,10 +129,12 @@ func (f *File) SetActiveSheet(index int) error {
 	return nil
 }
 
+// SheetCount returns the number of sheets in the workbook.
 func (f *File) SheetCount() int {
 	return len(f.sheets)
 }
 
+// GetSheetIndex returns the zero-based index of the sheet with the given name.
 func (f *File) GetSheetIndex(name string) (int, error) {
 	for i, s := range f.sheets {
 		if s.name == name {
@@ -129,6 +144,9 @@ func (f *File) GetSheetIndex(name string) (int, error) {
 	return -1, ErrSheetNotFound
 }
 
+// CopySheet duplicates the source sheet (cells, styles, merges, validations,
+// print and page setup) into a new sheet named target. Named ranges and auto-
+// filters attached to source are not copied.
 func (f *File) CopySheet(source, target string) error {
 	if f.closed {
 		return ErrFileClosed

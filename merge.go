@@ -1,5 +1,8 @@
 package goods
 
+// MergeCell merges the rectangular range between topLeft and bottomRight into
+// a single logical cell. The value of the top-left cell is kept. It returns
+// ErrMergeOverlap when the range intersects an existing merge.
 func (f *File) MergeCell(sheet, topLeft, bottomRight string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -50,6 +53,8 @@ func (f *File) MergeCell(sheet, topLeft, bottomRight string) error {
 	return nil
 }
 
+// UnmergeCell removes a previously registered merge matching exactly
+// topLeft:bottomRight. It returns ErrMergeNotFound if no such merge exists.
 func (f *File) UnmergeCell(sheet, topLeft, bottomRight string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -93,6 +98,8 @@ func (f *File) UnmergeCell(sheet, topLeft, bottomRight string) error {
 	return ErrMergeNotFound
 }
 
+// GetMergeCells returns every merge on the sheet as [topLeft, bottomRight]
+// A1-style pairs.
 func (f *File) GetMergeCells(sheet string) ([][2]string, error) {
 	if f.closed {
 		return nil, ErrFileClosed

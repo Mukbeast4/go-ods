@@ -10,6 +10,14 @@ type dataValidation struct {
 	validation *DataValidation
 }
 
+// DataValidation describes a validation rule attached to a cell range.
+//
+// Type is one of "list", "whole-number", "decimal", "text-length", "date",
+// "time" or "custom". Operator applies to the numeric/date types and accepts
+// "between", "not-between", "equal", "not-equal", "greater-than",
+// "greater-than-or-equal", "less-than" and "less-than-or-equal". Formula1 and
+// Formula2 are ODS expressions (Formula2 is only used for "between" and
+// "not-between"). ErrorStyle is "stop", "warning" or "info".
 type DataValidation struct {
 	Type         string
 	Operator     string
@@ -23,6 +31,8 @@ type DataValidation struct {
 	InputMessage string
 }
 
+// SetDataValidation attaches dv to every cell in the rectangular range between
+// topLeft and bottomRight. Missing cells are created.
 func (f *File) SetDataValidation(sheet, topLeft, bottomRight string, dv *DataValidation) error {
 	if f.closed {
 		return ErrFileClosed
@@ -64,6 +74,8 @@ func (f *File) SetDataValidation(sheet, topLeft, bottomRight string, dv *DataVal
 	return nil
 }
 
+// GetDataValidation returns the validation rule attached to the cell, or nil
+// when the cell has no validation.
 func (f *File) GetDataValidation(sheet, cellRef string) (*DataValidation, error) {
 	if f.closed {
 		return nil, ErrFileClosed
@@ -93,6 +105,8 @@ func (f *File) GetDataValidation(sheet, cellRef string) (*DataValidation, error)
 	return nil, nil
 }
 
+// RemoveDataValidation clears validation rules from every cell in the range.
+// Rules that no longer apply to any cell on the sheet are also dropped.
 func (f *File) RemoveDataValidation(sheet, topLeft, bottomRight string) error {
 	if f.closed {
 		return ErrFileClosed

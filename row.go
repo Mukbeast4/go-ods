@@ -1,5 +1,7 @@
 package goods
 
+// SetRowHeight sets the explicit height in centimeters for the 1-based row.
+// Height 0 falls back to the default. The row is created if it does not exist.
 func (f *File) SetRowHeight(sheet string, rowIdx int, height float64) error {
 	if f.closed {
 		return ErrFileClosed
@@ -22,6 +24,8 @@ func (f *File) SetRowHeight(sheet string, rowIdx int, height float64) error {
 	return nil
 }
 
+// SetRowVisible hides or shows a row. Hidden rows remain in the document but
+// are collapsed when rendered.
 func (f *File) SetRowVisible(sheet string, rowIdx int, visible bool) error {
 	if f.closed {
 		return ErrFileClosed
@@ -44,6 +48,8 @@ func (f *File) SetRowVisible(sheet string, rowIdx int, visible bool) error {
 	return nil
 }
 
+// GetRowVisible reports whether the row is visible. Rows with no explicit
+// setting are visible by default.
 func (f *File) GetRowVisible(sheet string, rowIdx int) (bool, error) {
 	if f.closed {
 		return false, ErrFileClosed
@@ -64,6 +70,8 @@ func (f *File) GetRowVisible(sheet string, rowIdx int) (bool, error) {
 	return r.visible, nil
 }
 
+// GetRowHeight returns the explicit height of a row in centimeters. It returns
+// 0 when the row uses the default height.
 func (f *File) GetRowHeight(sheet string, rowIdx int) (float64, error) {
 	if f.closed {
 		return 0, ErrFileClosed
@@ -84,6 +92,7 @@ func (f *File) GetRowHeight(sheet string, rowIdx int) (float64, error) {
 	return r.height, nil
 }
 
+// SetRowAutoFit toggles automatic row-height adjustment based on cell content.
 func (f *File) SetRowAutoFit(sheet string, rowIdx int, autoFit bool) error {
 	if f.closed {
 		return ErrFileClosed
@@ -106,6 +115,7 @@ func (f *File) SetRowAutoFit(sheet string, rowIdx int, autoFit bool) error {
 	return nil
 }
 
+// GetRowAutoFit reports whether the row is configured to auto-fit its content.
 func (f *File) GetRowAutoFit(sheet string, rowIdx int) (bool, error) {
 	if f.closed {
 		return false, ErrFileClosed
@@ -149,6 +159,9 @@ func shrinkRowRangeOnRemove(startRow, endRow, removeAt int) (int, int, bool) {
 	return startRow, endRow, false
 }
 
+// InsertRows inserts count blank rows starting at rowIdx (1-based). Merges,
+// named ranges, auto-filters, print range and formula references are shifted
+// accordingly.
 func (f *File) InsertRows(sheet string, rowIdx, count int) error {
 	if f.closed {
 		return ErrFileClosed
@@ -282,6 +295,8 @@ func shrinkPrintRangeOnRemoveRow(s *sheet, rowIdx int) {
 	}
 }
 
+// RemoveRow deletes the row at rowIdx (1-based) and shifts subsequent rows,
+// merges, named ranges, auto-filters, print range and formula references up.
 func (f *File) RemoveRow(sheet string, rowIdx int) error {
 	if f.closed {
 		return ErrFileClosed

@@ -8,6 +8,9 @@ import (
 	"os"
 )
 
+// ImageOptions controls the placement of an embedded image. Width and Height
+// are in centimeters; both default to 3 cm when zero. OffsetX and OffsetY are
+// additional offsets from the top-left of the anchor cell.
 type ImageOptions struct {
 	Width   float64
 	Height  float64
@@ -15,6 +18,7 @@ type ImageOptions struct {
 	OffsetY float64
 }
 
+// ImageInfo describes an image embedded in the document as returned by GetImages.
 type ImageInfo struct {
 	CellRef string
 	Name    string
@@ -26,6 +30,9 @@ type ImageInfo struct {
 	Data    []byte
 }
 
+// AddImage reads the file at path and embeds it on the sheet anchored at
+// cellRef. Supported formats are PNG, JPEG, GIF and BMP. Pass nil opts for
+// defaults.
 func (f *File) AddImage(sheet, cellRef, path string, opts *ImageOptions) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -34,6 +41,9 @@ func (f *File) AddImage(sheet, cellRef, path string, opts *ImageOptions) error {
 	return f.AddImageFromBytes(sheet, cellRef, data, opts)
 }
 
+// AddImageFromBytes embeds raw image data on the sheet anchored at cellRef.
+// The format is auto-detected from the magic bytes. Identical image bodies
+// anchored in different cells share a single Pictures/ entry.
 func (f *File) AddImageFromBytes(sheet, cellRef string, data []byte, opts *ImageOptions) error {
 	if f.closed {
 		return ErrFileClosed
@@ -102,6 +112,7 @@ func (f *File) AddImageFromBytes(sheet, cellRef string, data []byte, opts *Image
 	return nil
 }
 
+// GetImages returns every image anchored on the sheet, in row-major order.
 func (f *File) GetImages(sheet string) ([]ImageInfo, error) {
 	if f.closed {
 		return nil, ErrFileClosed
@@ -147,6 +158,8 @@ func (f *File) GetImages(sheet string) ([]ImageInfo, error) {
 	return result, nil
 }
 
+// RemoveImages detaches every image anchored at cellRef. Pictures no longer
+// referenced anywhere are dropped from the archive when the file is saved.
 func (f *File) RemoveImages(sheet, cellRef string) error {
 	if f.closed {
 		return ErrFileClosed

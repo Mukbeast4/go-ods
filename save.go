@@ -10,6 +10,9 @@ import (
 	ozip "github.com/mukbeast4/go-ods/internal/zip"
 )
 
+// Save writes the document back to the path it was opened from. It returns an
+// error when the file was built with NewFile and has no path yet; use SaveAs
+// instead.
 func (f *File) Save() error {
 	if f.closed {
 		return ErrFileClosed
@@ -20,6 +23,8 @@ func (f *File) Save() error {
 	return f.SaveAs(f.path)
 }
 
+// SaveAs writes the document to path and remembers it as the current path for
+// subsequent Save calls.
 func (f *File) SaveAs(path string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -38,6 +43,7 @@ func (f *File) SaveAs(path string) error {
 	return nil
 }
 
+// Write serializes the document and writes the resulting zip archive to w.
 func (f *File) Write(w io.Writer) error {
 	if f.closed {
 		return ErrFileClosed
@@ -51,6 +57,7 @@ func (f *File) Write(w io.Writer) error {
 	return ozip.WriteTo(w, entries)
 }
 
+// WriteToBuffer serializes the document into a new bytes.Buffer.
 func (f *File) WriteToBuffer() (*bytes.Buffer, error) {
 	if f.closed {
 		return nil, ErrFileClosed
@@ -64,6 +71,8 @@ func (f *File) WriteToBuffer() (*bytes.Buffer, error) {
 	return ozip.WriteToBuffer(entries)
 }
 
+// Close releases the in-memory data. Once closed a File cannot be read or
+// written; every method returns ErrFileClosed.
 func (f *File) Close() error {
 	f.closed = true
 	f.sheets = nil
@@ -72,6 +81,7 @@ func (f *File) Close() error {
 	return nil
 }
 
+// SaveAndClose is a convenience that calls SaveAs followed by Close.
 func (f *File) SaveAndClose(path string) error {
 	if err := f.SaveAs(path); err != nil {
 		return err
@@ -79,6 +89,7 @@ func (f *File) SaveAndClose(path string) error {
 	return f.Close()
 }
 
+// WriteToFile creates path and writes the serialized document to it.
 func (f *File) WriteToFile(path string) error {
 	file, err := os.Create(path)
 	if err != nil {

@@ -6,8 +6,10 @@ import (
 	"time"
 )
 
+// CellType identifies the semantic type of a cell value stored in an ODS document.
 type CellType int
 
+// Supported cell types. CellTypeEmpty represents an unset or cleared cell.
 const (
 	CellTypeEmpty CellType = iota
 	CellTypeString

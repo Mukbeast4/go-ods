@@ -23,6 +23,7 @@ Pure Go library for reading, writing, and evaluating ODS (OpenDocument Spreadshe
 - Sheet and cell protection
 - Conditional formatting (calcext namespace)
 - Auto-filter with filter criteria and sort keys
+- Embedded images (PNG, JPEG, GIF, BMP) anchored to cells
 - Streaming row iterator for large files
 - Document properties (title, creator, description)
 
@@ -213,6 +214,26 @@ sortKeys, _ := f.GetSort("Sheet1")
 
 f.ClearFilterCriteria("Sheet1")
 f.RemoveSort("Sheet1")
+```
+
+## Embedded Images
+
+Anchor images (PNG, JPEG, GIF, BMP) to any cell. Format is auto-detected, dimensions are in centimeters, identical binaries are deduplicated.
+
+```go
+f.AddImage("Sheet1", "B2", "logo.png", &ods.ImageOptions{Width: 4, Height: 3})
+
+data, _ := os.ReadFile("chart.jpg")
+f.AddImageFromBytes("Sheet1", "D5", data, &ods.ImageOptions{
+	Width: 6, Height: 4, OffsetX: 0.5, OffsetY: 0.25,
+})
+
+images, _ := f.GetImages("Sheet1")
+for _, img := range images {
+	fmt.Printf("%s: %s %vx%vcm\n", img.CellRef, img.Format, img.Width, img.Height)
+}
+
+f.RemoveImages("Sheet1", "B2")
 ```
 
 ## Contributing

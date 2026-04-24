@@ -55,7 +55,28 @@ type TableCell struct {
 	NumberColumnsSpanned  int         `xml:"number-columns-spanned,attr,omitempty"`
 	NumberRowsSpanned     int         `xml:"number-rows-spanned,attr,omitempty"`
 	Annotation            *Annotation `xml:"annotation,omitempty"`
+	Frames                []DrawFrame `xml:"frame"`
 	Paragraphs            []TextP     `xml:"p"`
+}
+
+type DrawFrame struct {
+	Name           string     `xml:"name,attr,omitempty"`
+	ZIndex         string     `xml:"z-index,attr,omitempty"`
+	Width          string     `xml:"width,attr,omitempty"`
+	Height         string     `xml:"height,attr,omitempty"`
+	X              string     `xml:"x,attr,omitempty"`
+	Y              string     `xml:"y,attr,omitempty"`
+	EndCellAddress string     `xml:"end-cell-address,attr,omitempty"`
+	EndX           string     `xml:"end-x,attr,omitempty"`
+	EndY           string     `xml:"end-y,attr,omitempty"`
+	Image          *DrawImage `xml:"image,omitempty"`
+}
+
+type DrawImage struct {
+	Href    string `xml:"href,attr,omitempty"`
+	Type    string `xml:"type,attr,omitempty"`
+	Show    string `xml:"show,attr,omitempty"`
+	Actuate string `xml:"actuate,attr,omitempty"`
 }
 
 type Annotation struct {

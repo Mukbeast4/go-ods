@@ -490,11 +490,69 @@ func writeCell(xw *Writer, cell *TableCell) error {
 		}
 	}
 
+	for i := range cell.Frames {
+		if err := writeDrawFrame(xw, &cell.Frames[i]); err != nil {
+			return err
+		}
+	}
+
 	if err := writeCellParagraphs(xw, cell); err != nil {
 		return err
 	}
 
 	return xw.EndElement("table", "table-cell")
+}
+
+func writeDrawFrame(xw *Writer, frame *DrawFrame) error {
+	attrs := []xml.Attr{}
+	if frame.Name != "" {
+		attrs = append(attrs, Attr("draw", "name", frame.Name))
+	}
+	if frame.ZIndex != "" {
+		attrs = append(attrs, Attr("draw", "z-index", frame.ZIndex))
+	}
+	if frame.Width != "" {
+		attrs = append(attrs, Attr("svg", "width", frame.Width))
+	}
+	if frame.Height != "" {
+		attrs = append(attrs, Attr("svg", "height", frame.Height))
+	}
+	if frame.X != "" {
+		attrs = append(attrs, Attr("svg", "x", frame.X))
+	}
+	if frame.Y != "" {
+		attrs = append(attrs, Attr("svg", "y", frame.Y))
+	}
+	if frame.EndCellAddress != "" {
+		attrs = append(attrs, Attr("table", "end-cell-address", frame.EndCellAddress))
+	}
+	if frame.EndX != "" {
+		attrs = append(attrs, Attr("table", "end-x", frame.EndX))
+	}
+	if frame.EndY != "" {
+		attrs = append(attrs, Attr("table", "end-y", frame.EndY))
+	}
+
+	if err := xw.StartElement("draw", "frame", attrs...); err != nil {
+		return err
+	}
+
+	if frame.Image != nil {
+		imgAttrs := []xml.Attr{
+			Attr("xlink", "href", frame.Image.Href),
+			Attr("xlink", "type", "simple"),
+			Attr("xlink", "show", "embed"),
+			Attr("xlink", "actuate", "onLoad"),
+		}
+		if err := xw.StartElement("draw", "image", imgAttrs...); err != nil {
+			return err
+		}
+		if err := xw.EndElement("draw", "image"); err != nil {
+			return err
+		}
+	}
+
+	return xw.EndElement("draw", "frame")
 }
 
 type metaField struct {

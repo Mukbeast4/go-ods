@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,12 +20,14 @@ type File struct {
 	metadata      *oxml.DocumentMeta
 	docStyles     *oxml.DocumentStyles
 	rawFiles      map[string][]byte
+	images        map[string][]byte
 	path          string
 	closed        bool
 	autoRecalc    bool
 	contentStyles map[string]oxml.Style
 	namedRanges   []namedRange
 	autoFilters   []autoFilter
+	nextImageID   int
 }
 
 type sheet struct {
@@ -69,6 +72,18 @@ type cell struct {
 	comment        *Comment
 	styleName      string
 	validationName string
+	images         []*imageFrame
+}
+
+type imageFrame struct {
+	name    string
+	href    string
+	width   float64
+	height  float64
+	offsetX float64
+	offsetY float64
+	format  string
+	data    []byte
 }
 
 type mergeRange struct {
@@ -81,6 +96,7 @@ func NewFile() *File {
 		sheets:   make([]*sheet, 0),
 		styles:   newStyleManager(),
 		rawFiles: make(map[string][]byte),
+		images:   make(map[string][]byte),
 		metadata: &oxml.DocumentMeta{
 			Meta: oxml.Meta{
 				Generator:    "goods",
@@ -136,6 +152,7 @@ func parseZipResult(result *ozip.ReadResult) (*File, error) {
 		sheets:   make([]*sheet, 0),
 		styles:   newStyleManager(),
 		rawFiles: make(map[string][]byte),
+		images:   make(map[string][]byte),
 		metadata: &oxml.DocumentMeta{
 			Meta: oxml.Meta{Generator: "goods"},
 		},
@@ -146,7 +163,11 @@ func parseZipResult(result *ozip.ReadResult) (*File, error) {
 		switch name {
 		case "mimetype", "content.xml", "styles.xml", "meta.xml", "META-INF/manifest.xml", "settings.xml":
 		default:
-			f.rawFiles[name] = data
+			if strings.HasPrefix(name, "Pictures/") {
+				f.images[name] = data
+			} else {
+				f.rawFiles[name] = data
+			}
 		}
 	}
 
@@ -201,7 +222,24 @@ type xmlTableCell struct {
 	NumberColumnsSpanned  int             `xml:"number-columns-spanned,attr"`
 	NumberRowsSpanned     int             `xml:"number-rows-spanned,attr"`
 	Annotations           []xmlAnnotation `xml:"annotation"`
+	Frames                []xmlDrawFrame  `xml:"frame"`
 	Paragraphs            []xmlParagraph  `xml:"p"`
+}
+
+type xmlDrawFrame struct {
+	XMLName        xml.Name      `xml:"frame"`
+	Name           string        `xml:"name,attr"`
+	Width          string        `xml:"width,attr"`
+	Height         string        `xml:"height,attr"`
+	X              string        `xml:"x,attr"`
+	Y              string        `xml:"y,attr"`
+	EndCellAddress string        `xml:"end-cell-address,attr"`
+	Image          *xmlDrawImage `xml:"image"`
+}
+
+type xmlDrawImage struct {
+	XMLName xml.Name `xml:"image"`
+	Href    string   `xml:"http://www.w3.org/1999/xlink href,attr"`
 }
 
 type xmlTableRow struct {
@@ -597,6 +635,7 @@ func parseXMLRowCells(s *sheet, rowIdx int, xmlCells []xmlTableCell) bool {
 					comment:        c.comment,
 					styleName:      c.styleName,
 					validationName: c.validationName,
+					images:         c.images,
 				}
 				r.cells[colIdx+rep] = newCell
 				if colIdx+rep > s.maxCol {
@@ -679,8 +718,9 @@ func convertXMLCell(xc *xmlTableCell) *cell {
 	hasAnnotation := len(xc.Annotations) > 0
 	hasValidation := xc.ContentValidationName != ""
 	hasStyle := xc.StyleName != ""
+	hasFrame := len(xc.Frames) > 0
 
-	if xc.ValueType == "" && len(xc.Paragraphs) == 0 && xc.Formula == "" && !hasAnnotation && !hasValidation && !hasStyle {
+	if xc.ValueType == "" && len(xc.Paragraphs) == 0 && xc.Formula == "" && !hasAnnotation && !hasValidation && !hasStyle && !hasFrame {
 		return nil
 	}
 
@@ -705,6 +745,25 @@ func convertXMLCell(xc *xmlTableCell) *cell {
 		}
 	}
 
+	for _, fr := range xc.Frames {
+		if fr.Image == nil || fr.Image.Href == "" {
+			continue
+		}
+		format := ""
+		if i := strings.LastIndex(fr.Image.Href, "."); i >= 0 {
+			format = fr.Image.Href[i+1:]
+		}
+		c.images = append(c.images, &imageFrame{
+			name:    fr.Name,
+			href:    fr.Image.Href,
+			width:   parseCmValue(fr.Width),
+			height:  parseCmValue(fr.Height),
+			offsetX: parseCmValue(fr.X),
+			offsetY: parseCmValue(fr.Y),
+			format:  format,
+		})
+	}
+
 	parseXMLCellValue(xc, c)
 
 	if xc.Formula != "" {
@@ -713,6 +772,19 @@ func convertXMLCell(xc *xmlTableCell) *cell {
 	}
 
 	return c
+}
+
+func parseCmValue(s string) float64 {
+	if s == "" {
+		return 0
+	}
+	s = strings.TrimSuffix(s, "cm")
+	s = strings.TrimSpace(s)
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return f
 }
 
 func parseXMLCellValue(xc *xmlTableCell, c *cell) {
@@ -1309,6 +1381,24 @@ func buildXMLCell(c *cell, sm *styleManager, autoStyles *[]oxml.Style) oxml.Tabl
 		}
 	}
 
+	for _, img := range c.images {
+		frame := oxml.DrawFrame{
+			Name:   img.name,
+			ZIndex: "0",
+			Width:  fmt.Sprintf("%.4fcm", img.width),
+			Height: fmt.Sprintf("%.4fcm", img.height),
+			X:      fmt.Sprintf("%.4fcm", img.offsetX),
+			Y:      fmt.Sprintf("%.4fcm", img.offsetY),
+			Image: &oxml.DrawImage{
+				Href:    img.href,
+				Type:    "simple",
+				Show:    "embed",
+				Actuate: "onLoad",
+			},
+		}
+		xmlCell.Frames = append(xmlCell.Frames, frame)
+	}
+
 	if c.colSpan > 1 {
 		xmlCell.NumberColumnsSpanned = c.colSpan
 	}
@@ -1426,6 +1516,16 @@ func (f *File) marshalStyles() ([]byte, error) {
 
 func (f *File) marshalManifest() ([]byte, error) {
 	m := oxml.DefaultManifest()
+	for href := range f.images {
+		ext := ""
+		if i := strings.LastIndex(href, "."); i >= 0 {
+			ext = href[i+1:]
+		}
+		m.FileEntries = append(m.FileEntries, oxml.FileEntry{
+			FullPath:  href,
+			MediaType: imageMimeType(ext),
+		})
+	}
 	var buf bytes.Buffer
 	if err := oxml.WriteManifestXML(&buf, &m); err != nil {
 		return nil, err

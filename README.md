@@ -110,6 +110,23 @@ f.SetCellFloat("Sheet1", "A1", 50)
 | Lookup | `VLOOKUP`, `HLOOKUP`, `XLOOKUP`, `INDEX`, `MATCH` |
 | Date/Time | `DATE`, `TODAY`, `NOW`, `YEAR`, `MONTH`, `DAY` |
 
+## Typed Cell Helpers
+
+Convenience wrappers for the most common number formats:
+
+```go
+f.SetCellCurrency("Sheet1", "A1", 1234.5, "$")     // "$1,234.50"
+f.SetCellCurrency("Sheet1", "A2", 999.99, "€")     // "€999.99"
+
+f.SetCellPercentage("Sheet1", "B1", 0.25, 0)       // "25%"
+f.SetCellPercentage("Sheet1", "B2", 0.3333, 2)     // "33.33%"
+
+t := time.Date(2024, 3, 15, 9, 30, 0, 0, time.UTC)
+f.SetCellDateTime("Sheet1", "C1", t, "DD/MM/YYYY")
+
+f.SetCellDuration("Sheet1", "D1", 90*time.Minute)  // stored as PT1H30M0S
+```
+
 ## Reading ODS Files
 
 ```go

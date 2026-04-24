@@ -9,13 +9,15 @@ type Style struct {
 }
 
 type Font struct {
-	Family        string
-	Size          string
-	Bold          string
-	Italic        string
-	Color         string
-	Underline     bool
-	Strikethrough bool
+	Family             string
+	Size               string
+	Bold               string
+	Italic             string
+	Color              string
+	Underline          bool
+	Strikethrough      bool
+	StrikethroughColor string
+	VerticalAlign      string
 }
 
 type Fill struct {
@@ -32,6 +34,8 @@ type Alignment struct {
 	Horizontal string
 	Vertical   string
 	WrapText   bool
+	Rotation   int
+	Indent     int
 }
 
 type styleManager struct {

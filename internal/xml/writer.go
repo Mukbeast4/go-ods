@@ -199,6 +199,9 @@ func writeParagraphProperties(xw *Writer, pp *ParagraphProperties) error {
 	if pp.TextAlign != "" {
 		pAttrs = append(pAttrs, Attr("fo", "text-align", pp.TextAlign))
 	}
+	if pp.MarginLeft != "" {
+		pAttrs = append(pAttrs, Attr("fo", "margin-left", pp.MarginLeft))
+	}
 	if err := xw.StartElement("style", "paragraph-properties", pAttrs...); err != nil {
 		return err
 	}
@@ -283,6 +286,9 @@ func writeCellProperties(xw *Writer, cp *TableCellProperties) error {
 	if cp.CellProtect != "" {
 		attrs = append(attrs, Attr("style", "cell-protect", cp.CellProtect))
 	}
+	if cp.RotationAngle != "" {
+		attrs = append(attrs, Attr("style", "rotation-angle", cp.RotationAngle))
+	}
 
 	if err := xw.StartElement("style", "table-cell-properties", attrs...); err != nil {
 		return err
@@ -312,6 +318,12 @@ func writeTextProperties(xw *Writer, tp *TextProperties) error {
 	}
 	if tp.TextLineThroughStyle != "" {
 		attrs = append(attrs, Attr("style", "text-line-through-style", tp.TextLineThroughStyle))
+	}
+	if tp.TextLineThroughColor != "" {
+		attrs = append(attrs, Attr("style", "text-line-through-color", tp.TextLineThroughColor))
+	}
+	if tp.TextPosition != "" {
+		attrs = append(attrs, Attr("style", "text-position", tp.TextPosition))
 	}
 
 	if err := xw.StartElement("style", "text-properties", attrs...); err != nil {

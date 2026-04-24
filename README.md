@@ -143,13 +143,19 @@ sheets := f.GetSheetList() // ["Summary", "Data"]
 ```go
 style := &ods.Style{
 	Font: &ods.Font{
-		Family: "Arial",
-		Size:   "12pt",
-		Bold:   "bold",
-		Color:  "#FF0000",
+		Family:             "Arial",
+		Size:               "12pt",
+		Bold:               "bold",
+		Color:              "#FF0000",
+		Strikethrough:      true,
+		StrikethroughColor: "#000000",
+		VerticalAlign:      "super", // or "sub"
 	},
-	Fill: &ods.Fill{
-		Color: "#FFFF00",
+	Fill: &ods.Fill{Color: "#FFFF00"},
+	Alignment: &ods.Alignment{
+		Horizontal: "center",
+		Rotation:   45,  // degrees (0-360, negatives are normalized)
+		Indent:     2,   // 0.25cm increments
 	},
 }
 
@@ -167,6 +173,7 @@ f.SetColWidth("Sheet1", "B", 5.0)  // Set column B width
 f.SetRowVisible("Sheet1", 2, false)  // Hide row 2
 f.SetColVisible("Sheet1", "C", false) // Hide column C
 f.SetColAutoFit("Sheet1", "A", true)  // Auto-fit column A width
+f.SetRowAutoFit("Sheet1", 1, true)    // Auto-fit row 1 height
 ```
 
 ## Sheet Protection

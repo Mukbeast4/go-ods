@@ -58,6 +58,7 @@ type row struct {
 	cells   map[int]*cell
 	height  float64
 	visible bool
+	autoFit bool
 }
 
 type cell struct {
@@ -352,6 +353,11 @@ type xmlTableColumnProps struct {
 	ColumnWidth     string `xml:"column-width,attr"`
 }
 
+type xmlTableRowProps struct {
+	UseOptimalHeight string `xml:"use-optimal-row-height,attr"`
+	RowHeight        string `xml:"row-height,attr"`
+}
+
 type xmlStyleDef struct {
 	XMLName               xml.Name             `xml:"style"`
 	Name                  string               `xml:"name,attr"`
@@ -359,6 +365,7 @@ type xmlStyleDef struct {
 	ParentStyleName       string               `xml:"parent-style-name,attr"`
 	DataStyleName         string               `xml:"data-style-name,attr"`
 	TableColumnProperties *xmlTableColumnProps `xml:"table-column-properties"`
+	TableRowProperties    *xmlTableRowProps    `xml:"table-row-properties"`
 }
 
 type xmlContent struct {
@@ -399,6 +406,12 @@ func parseContentXML(f *File, data []byte) error {
 			cs.TableColumnProperties = &oxml.TableColumnProperties{
 				ColumnWidth:     s.TableColumnProperties.ColumnWidth,
 				UseOptimalWidth: s.TableColumnProperties.UseOptimalWidth,
+			}
+		}
+		if s.TableRowProperties != nil {
+			cs.TableRowProperties = &oxml.TableRowProperties{
+				RowHeight:        s.TableRowProperties.RowHeight,
+				UseOptimalHeight: s.TableRowProperties.UseOptimalHeight,
 			}
 		}
 		f.contentStyles[s.Name] = cs
@@ -469,7 +482,7 @@ func parseXMLTable(xmlTbl *xmlTable, validationMap map[string]*xmlContentValidat
 		}
 	}
 
-	parseXMLRows(s, xmlTbl.Rows)
+	parseXMLRows(s, xmlTbl.Rows, contentStyles)
 
 	for _, v := range validations {
 		if _, ok := validationMap[v.Name]; ok {
@@ -576,7 +589,7 @@ func splitConditionalTarget(addr string) (string, string) {
 	return sheetName, rest
 }
 
-func parseXMLRows(s *sheet, xmlRows []xmlTableRow) {
+func parseXMLRows(s *sheet, xmlRows []xmlTableRow, contentStyles map[string]oxml.Style) {
 	rowIdx := 1
 	for _, xmlRow := range xmlRows {
 		rowRepeat := xmlRow.NumberRowsRepeated
@@ -590,6 +603,12 @@ func parseXMLRows(s *sheet, xmlRows []xmlTableRow) {
 		}
 
 		rowHidden := xmlRow.Visibility == "collapse"
+		rowAutoFit := false
+		if xmlRow.StyleName != "" {
+			if cs, ok := contentStyles[xmlRow.StyleName]; ok && cs.TableRowProperties != nil {
+				rowAutoFit = cs.TableRowProperties.UseOptimalHeight == "true"
+			}
+		}
 		for range rowRepeat {
 			hasData := parseXMLRowCells(s, rowIdx, xmlRow.Cells)
 			if hasData {
@@ -597,9 +616,12 @@ func parseXMLRows(s *sheet, xmlRows []xmlTableRow) {
 					s.maxRow = rowIdx
 				}
 			}
-			if rowHidden {
+			if rowHidden || rowAutoFit {
 				r := s.getOrCreateRow(rowIdx)
-				r.visible = false
+				if rowHidden {
+					r.visible = false
+				}
+				r.autoFit = rowAutoFit
 				if rowIdx > s.maxRow {
 					s.maxRow = rowIdx
 				}
@@ -1262,15 +1284,20 @@ func buildTableRow(s *sheet, rowIdx, colCount int, sm *styleManager, autoStyles 
 		xmlRow.Visibility = "collapse"
 	}
 
-	if exists && r.height > 0 {
+	if exists && (r.height > 0 || r.autoFit) {
 		styleName := fmt.Sprintf("ro%d", len(*autoStyles)+1)
+		trp := &oxml.TableRowProperties{}
+		if r.height > 0 {
+			trp.RowHeight = fmt.Sprintf("%.4fcm", r.height)
+			trp.UseOptimalHeight = "false"
+		}
+		if r.autoFit {
+			trp.UseOptimalHeight = "true"
+		}
 		*autoStyles = append(*autoStyles, oxml.Style{
-			Name:   styleName,
-			Family: "table-row",
-			TableRowProperties: &oxml.TableRowProperties{
-				RowHeight:        fmt.Sprintf("%.4fcm", r.height),
-				UseOptimalHeight: "false",
-			},
+			Name:               styleName,
+			Family:             "table-row",
+			TableRowProperties: trp,
 		})
 		xmlRow.StyleName = styleName
 	}
@@ -1429,6 +1456,15 @@ func convertStyle(name string, s *Style) oxml.Style {
 		if s.Font.Strikethrough {
 			xs.TextProperties.TextLineThroughStyle = "solid"
 		}
+		if s.Font.StrikethroughColor != "" {
+			if xs.TextProperties.TextLineThroughStyle == "" {
+				xs.TextProperties.TextLineThroughStyle = "solid"
+			}
+			xs.TextProperties.TextLineThroughColor = s.Font.StrikethroughColor
+		}
+		if s.Font.VerticalAlign != "" {
+			xs.TextProperties.TextPosition = verticalAlignToTextPosition(s.Font.VerticalAlign)
+		}
 	}
 
 	if s.Fill != nil {
@@ -1450,12 +1486,22 @@ func convertStyle(name string, s *Style) oxml.Style {
 		xs.ParagraphProperties = &oxml.ParagraphProperties{
 			TextAlign: s.Alignment.Horizontal,
 		}
+		if s.Alignment.Indent > 0 {
+			xs.ParagraphProperties.MarginLeft = fmt.Sprintf("%.4fcm", float64(s.Alignment.Indent)*0.25)
+		}
 		if xs.TableCellProperties == nil {
 			xs.TableCellProperties = &oxml.TableCellProperties{}
 		}
 		xs.TableCellProperties.VerticalAlign = s.Alignment.Vertical
 		if s.Alignment.WrapText {
 			xs.TableCellProperties.WrapOption = "wrap"
+		}
+		if s.Alignment.Rotation != 0 {
+			angle := s.Alignment.Rotation % 360
+			if angle < 0 {
+				angle += 360
+			}
+			xs.TableCellProperties.RotationAngle = fmt.Sprintf("%d", angle)
 		}
 	}
 
@@ -1471,6 +1517,16 @@ func convertStyle(name string, s *Style) oxml.Style {
 	}
 
 	return xs
+}
+
+func verticalAlignToTextPosition(v string) string {
+	switch v {
+	case "super", "superscript":
+		return "super 58%"
+	case "sub", "subscript":
+		return "sub 58%"
+	}
+	return v
 }
 
 func formatBorder(b *Border) string {

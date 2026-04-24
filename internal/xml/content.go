@@ -198,6 +198,7 @@ type TableCellProperties struct {
 	VerticalAlign   string `xml:"vertical-align,attr,omitempty"`
 	WrapOption      string `xml:"wrap-option,attr,omitempty"`
 	CellProtect     string `xml:"cell-protect,attr,omitempty"`
+	RotationAngle   string `xml:"rotation-angle,attr,omitempty"`
 }
 
 type TextProperties struct {
@@ -208,8 +209,11 @@ type TextProperties struct {
 	Color                string `xml:"color,attr,omitempty"`
 	TextUnderlineStyle   string `xml:"text-underline-style,attr,omitempty"`
 	TextLineThroughStyle string `xml:"text-line-through-style,attr,omitempty"`
+	TextLineThroughColor string `xml:"text-line-through-color,attr,omitempty"`
+	TextPosition         string `xml:"text-position,attr,omitempty"`
 }
 
 type ParagraphProperties struct {
-	TextAlign string `xml:"text-align,attr,omitempty"`
+	TextAlign  string `xml:"text-align,attr,omitempty"`
+	MarginLeft string `xml:"margin-left,attr,omitempty"`
 }

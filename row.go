@@ -84,6 +84,48 @@ func (f *File) GetRowHeight(sheet string, rowIdx int) (float64, error) {
 	return r.height, nil
 }
 
+func (f *File) SetRowAutoFit(sheet string, rowIdx int, autoFit bool) error {
+	if f.closed {
+		return ErrFileClosed
+	}
+	s := f.getSheet(sheet)
+	if s == nil {
+		return ErrSheetNotFound
+	}
+	if rowIdx < 1 {
+		return ErrRowOutOfRange
+	}
+
+	r := s.getOrCreateRow(rowIdx)
+	r.autoFit = autoFit
+
+	if rowIdx > s.maxRow {
+		s.maxRow = rowIdx
+	}
+
+	return nil
+}
+
+func (f *File) GetRowAutoFit(sheet string, rowIdx int) (bool, error) {
+	if f.closed {
+		return false, ErrFileClosed
+	}
+	s := f.getSheet(sheet)
+	if s == nil {
+		return false, ErrSheetNotFound
+	}
+	if rowIdx < 1 {
+		return false, ErrRowOutOfRange
+	}
+
+	r, ok := s.rows[rowIdx]
+	if !ok {
+		return false, nil
+	}
+
+	return r.autoFit, nil
+}
+
 func shiftRowRange(startRow *int, endRow *int, insertAt int, count int) {
 	if *startRow >= insertAt {
 		*startRow += count

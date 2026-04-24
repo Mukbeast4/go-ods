@@ -14,6 +14,7 @@ type namedRange struct {
 	endRow   int
 }
 
+// NamedRangeInfo describes a named range as returned by GetNamedRange.
 type NamedRangeInfo struct {
 	Name        string
 	Sheet       string
@@ -21,6 +22,8 @@ type NamedRangeInfo struct {
 	BottomRight string
 }
 
+// SetNamedRange registers a workbook-scoped named range pointing at
+// sheet!topLeft:bottomRight. Re-registering an existing name updates its range.
 func (f *File) SetNamedRange(name, sheet, topLeft, bottomRight string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -60,6 +63,8 @@ func (f *File) SetNamedRange(name, sheet, topLeft, bottomRight string) error {
 	return nil
 }
 
+// GetNamedRange returns the information for the named range, or
+// ErrNamedRangeNotFound when it does not exist.
 func (f *File) GetNamedRange(name string) (*NamedRangeInfo, error) {
 	if f.closed {
 		return nil, ErrFileClosed
@@ -73,6 +78,7 @@ func (f *File) GetNamedRange(name string) (*NamedRangeInfo, error) {
 	return nil, ErrNamedRangeNotFound
 }
 
+// DeleteNamedRange removes a named range by name.
 func (f *File) DeleteNamedRange(name string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -87,6 +93,7 @@ func (f *File) DeleteNamedRange(name string) error {
 	return ErrNamedRangeNotFound
 }
 
+// GetNamedRanges returns a snapshot of every named range in the workbook.
 func (f *File) GetNamedRanges() []NamedRangeInfo {
 	result := make([]NamedRangeInfo, 0, len(f.namedRanges))
 	for _, nr := range f.namedRanges {

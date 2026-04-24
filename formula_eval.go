@@ -9,6 +9,8 @@ import (
 	"unicode"
 )
 
+// CellValues maps A1-style cell references to their resolved values. It is
+// used by [Evaluate] and [*File.EvaluateFormula] as the evaluation environment.
 type CellValues map[string]interface{}
 
 type rangeData struct {
@@ -17,6 +19,9 @@ type rangeData struct {
 	cols   int
 }
 
+// Evaluate parses and evaluates a standalone ODS formula against the provided
+// values map. Use [*File.EvaluateFormula] to evaluate a formula already stored
+// on a cell so cross-sheet references resolve correctly.
 func Evaluate(formula string, values CellValues) (interface{}, error) {
 	f := strings.TrimPrefix(formula, "of:=")
 	f = strings.TrimPrefix(f, "of:")
@@ -29,6 +34,10 @@ func Evaluate(formula string, values CellValues) (interface{}, error) {
 	return result, nil
 }
 
+// EvaluateFormula evaluates the formula stored at sheet!cellRef. Values of
+// other cells on the same sheet are gathered automatically; extraValues allows
+// overrides. It does not store the result back on the cell — use
+// [*File.RecalcSheet] for that.
 func (f *File) EvaluateFormula(sheet, cellRef string, extraValues CellValues) (interface{}, error) {
 	if f.closed {
 		return nil, ErrFileClosed

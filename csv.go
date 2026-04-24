@@ -6,11 +6,15 @@ import (
 	"os"
 )
 
+// CSVOptions controls the encoding used by ExportCSV. Separator defaults to
+// ',' when zero; set UseCRLF to true for Windows line endings.
 type CSVOptions struct {
 	Separator rune
 	UseCRLF   bool
 }
 
+// ExportCSV writes the sheet contents as CSV to w. Formulas are exported as
+// their computed values (or raw values when no recalc has been performed).
 func (f *File) ExportCSV(sheet string, w io.Writer, opts *CSVOptions) error {
 	if f.closed {
 		return ErrFileClosed
@@ -39,6 +43,7 @@ func (f *File) ExportCSV(sheet string, w io.Writer, opts *CSVOptions) error {
 	return writer.Error()
 }
 
+// ExportCSVFile creates path and writes the sheet contents as CSV to it.
 func (f *File) ExportCSVFile(sheet, path string, opts *CSVOptions) error {
 	file, err := os.Create(path)
 	if err != nil {

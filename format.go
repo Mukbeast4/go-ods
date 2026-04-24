@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// SetCellNumberFormat assigns an ODS number format code (e.g. "0.00",
+// "#,##0", "0%", "$#,##0.00") to the cell. The format is applied on render and
+// by GetCellFormattedValue.
 func (f *File) SetCellNumberFormat(sheet, cellRef, format string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -40,6 +43,8 @@ func (f *File) SetCellNumberFormat(sheet, cellRef, format string) error {
 	return nil
 }
 
+// GetCellNumberFormat returns the number format code stored on the cell, or
+// "" when none is set.
 func (f *File) GetCellNumberFormat(sheet, cellRef string) (string, error) {
 	if f.closed {
 		return "", ErrFileClosed
@@ -142,6 +147,8 @@ func formatWithThousands(value float64, decimals int) string {
 	return formatted
 }
 
+// GetCellFormattedValue returns the cell value rendered through its number
+// format. Cells without a format fall back to GetCellValue behavior.
 func (f *File) GetCellFormattedValue(sheet, cellRef string) (string, error) {
 	if f.closed {
 		return "", ErrFileClosed

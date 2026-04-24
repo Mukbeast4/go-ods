@@ -286,6 +286,9 @@ func storeResult(c *cell, result interface{}) {
 	}
 }
 
+// RecalcSheet evaluates every formula on the sheet in topological order and
+// stores the result on the source cell. It returns ErrCircularReference if
+// formulas form a dependency cycle.
 func (f *File) RecalcSheet(sheetName string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -331,6 +334,8 @@ func (f *File) RecalcSheet(sheetName string) error {
 	return nil
 }
 
+// RecalcAll evaluates every formula on every sheet, including cross-sheet
+// references, in a single topological pass.
 func (f *File) RecalcAll() error {
 	if f.closed {
 		return ErrFileClosed
@@ -398,6 +403,8 @@ func (f *File) RecalcAll() error {
 	return nil
 }
 
+// SetAutoRecalc toggles automatic recalculation: when enabled, changes to cell
+// values trigger RecalcSheet on the affected sheet. Off by default.
 func (f *File) SetAutoRecalc(enabled bool) {
 	f.autoRecalc = enabled
 }

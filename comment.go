@@ -1,11 +1,14 @@
 package goods
 
+// Comment holds the metadata attached to a cell annotation. Date is the
+// ODS dc:date string ("2024-03-15T10:20:30").
 type Comment struct {
 	Author string
 	Date   string
 	Text   string
 }
 
+// SetCellComment attaches or replaces the comment on a cell.
 func (f *File) SetCellComment(sheet, cellRef string, comment *Comment) error {
 	if f.closed {
 		return ErrFileClosed
@@ -43,6 +46,8 @@ func (f *File) SetCellComment(sheet, cellRef string, comment *Comment) error {
 	return nil
 }
 
+// GetCellComment returns a copy of the comment attached to the cell, or nil
+// when no comment is set.
 func (f *File) GetCellComment(sheet, cellRef string) (*Comment, error) {
 	if f.closed {
 		return nil, ErrFileClosed
@@ -69,6 +74,7 @@ func (f *File) GetCellComment(sheet, cellRef string) (*Comment, error) {
 	}, nil
 }
 
+// RemoveCellComment clears the comment attached to the cell if any.
 func (f *File) RemoveCellComment(sheet, cellRef string) error {
 	if f.closed {
 		return ErrFileClosed

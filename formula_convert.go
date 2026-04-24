@@ -7,6 +7,9 @@ import (
 	"unicode"
 )
 
+// FormulaToGo translates an ODS formula into a Go-like expression using
+// cell-reference names and Go operators. Intended as a debugging aid, it is
+// not a full compiler: unsupported syntax falls back to the cleaned original.
 func FormulaToGo(formula string) string {
 	f := strings.TrimPrefix(formula, "of:=")
 	f = strings.TrimPrefix(f, "of:")

@@ -22,6 +22,9 @@ func parseRowNumber(s string) (int, error) {
 	return row, nil
 }
 
+// CellNameToCoordinates converts an A1-style cell reference such as "B12" into
+// 1-based column and row numbers. It returns ErrInvalidCell when the reference
+// is malformed.
 func CellNameToCoordinates(cell string) (col, row int, err error) {
 	cell = strings.TrimSpace(cell)
 	if cell == "" {
@@ -58,6 +61,9 @@ func CellNameToCoordinates(cell string) (col, row int, err error) {
 	return col, row, nil
 }
 
+// CoordinatesToCellName converts 1-based column and row numbers into an
+// A1-style cell reference. It returns ErrInvalidCoords when either argument is
+// below 1.
 func CoordinatesToCellName(col, row int) (string, error) {
 	if col < 1 || row < 1 {
 		return "", ErrInvalidCoords
@@ -83,6 +89,9 @@ func columnNumberToName(col int) string {
 	return result
 }
 
+// Cell builds an A1-style cell reference from 1-based coordinates. It panics
+// when col or row is below 1; use CoordinatesToCellName for a non-panicking
+// alternative.
 func Cell(col, row int) string {
 	name, err := CoordinatesToCellName(col, row)
 	if err != nil {
@@ -91,6 +100,8 @@ func Cell(col, row int) string {
 	return name
 }
 
+// Cells builds an A1-style range reference such as "A1:C10" from two pairs of
+// 1-based coordinates.
 func Cells(startCol, startRow, endCol, endRow int) string {
 	start := Cell(startCol, startRow)
 	end := Cell(endCol, endRow)

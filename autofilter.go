@@ -14,16 +14,22 @@ type filterColumn struct {
 	values []string
 }
 
+// FilterCriteria describes which values are kept visible for a given column of
+// an auto-filter. Column is 1-based. Rows whose value in that column is not in
+// Values are hidden.
 type FilterCriteria struct {
 	Column int
 	Values []string
 }
 
+// SortKey describes one key used by SetSort. Column is 1-based.
 type SortKey struct {
 	Column     int
 	Descending bool
 }
 
+// SetAutoFilter enables an auto-filter over the given range. Only one auto-filter
+// may exist per sheet; a second call replaces the previous range.
 func (f *File) SetAutoFilter(sheet, topLeft, bottomRight string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -58,6 +64,8 @@ func (f *File) SetAutoFilter(sheet, topLeft, bottomRight string) error {
 	return nil
 }
 
+// GetAutoFilter returns the top-left and bottom-right A1-style cells of the
+// sheet's auto-filter. It returns ErrAutoFilterNotFound when none is set.
 func (f *File) GetAutoFilter(sheet string) (string, string, error) {
 	if f.closed {
 		return "", "", ErrFileClosed
@@ -83,6 +91,7 @@ func (f *File) GetAutoFilter(sheet string) (string, string, error) {
 	return "", "", ErrAutoFilterNotFound
 }
 
+// RemoveAutoFilter clears the sheet's auto-filter including any criteria.
 func (f *File) RemoveAutoFilter(sheet string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -100,6 +109,8 @@ func (f *File) RemoveAutoFilter(sheet string) error {
 	return ErrAutoFilterNotFound
 }
 
+// SetFilterCriteria replaces the filtering criteria attached to the sheet's
+// auto-filter. An auto-filter must already be set on the sheet.
 func (f *File) SetFilterCriteria(sheet string, criteria []FilterCriteria) error {
 	if f.closed {
 		return ErrFileClosed
@@ -123,6 +134,7 @@ func (f *File) SetFilterCriteria(sheet string, criteria []FilterCriteria) error 
 	return ErrAutoFilterNotFound
 }
 
+// GetFilterCriteria returns the criteria attached to the sheet's auto-filter.
 func (f *File) GetFilterCriteria(sheet string) ([]FilterCriteria, error) {
 	if f.closed {
 		return nil, ErrFileClosed
@@ -146,6 +158,7 @@ func (f *File) GetFilterCriteria(sheet string) ([]FilterCriteria, error) {
 	return nil, ErrAutoFilterNotFound
 }
 
+// ClearFilterCriteria removes every criterion while keeping the auto-filter range.
 func (f *File) ClearFilterCriteria(sheet string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -163,6 +176,8 @@ func (f *File) ClearFilterCriteria(sheet string) error {
 	return ErrAutoFilterNotFound
 }
 
+// SetSort stores a primary/secondary sort configuration for the sheet. The
+// keys are applied in order.
 func (f *File) SetSort(sheet string, keys []SortKey) error {
 	if f.closed {
 		return ErrFileClosed
@@ -175,6 +190,7 @@ func (f *File) SetSort(sheet string, keys []SortKey) error {
 	return nil
 }
 
+// GetSort returns the sort configuration stored for the sheet.
 func (f *File) GetSort(sheet string) ([]SortKey, error) {
 	if f.closed {
 		return nil, ErrFileClosed
@@ -186,6 +202,7 @@ func (f *File) GetSort(sheet string) ([]SortKey, error) {
 	return s.sortKeys, nil
 }
 
+// RemoveSort clears the sort configuration stored for the sheet.
 func (f *File) RemoveSort(sheet string) error {
 	if f.closed {
 		return ErrFileClosed

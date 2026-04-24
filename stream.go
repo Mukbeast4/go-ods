@@ -2,12 +2,16 @@ package goods
 
 import "sort"
 
+// RowIterator yields rows from a sheet in ascending row-index order. Empty
+// rows are skipped. Use it to stream large sheets without materializing the
+// entire document with GetRows.
 type RowIterator struct {
 	sheet   *sheet
 	rowKeys []int
 	current int
 }
 
+// NewRowIterator returns an iterator over the non-empty rows of the sheet.
 func (f *File) NewRowIterator(sheet string) (*RowIterator, error) {
 	if f.closed {
 		return nil, ErrFileClosed
@@ -30,11 +34,15 @@ func (f *File) NewRowIterator(sheet string) (*RowIterator, error) {
 	}, nil
 }
 
+// Next advances to the next non-empty row. It returns false when the iterator
+// is exhausted.
 func (it *RowIterator) Next() bool {
 	it.current++
 	return it.current < len(it.rowKeys)
 }
 
+// RowIndex returns the 1-based row index of the row currently yielded by the
+// iterator. It returns 0 before Next has been called or after it returned false.
 func (it *RowIterator) RowIndex() int {
 	if it.current < 0 || it.current >= len(it.rowKeys) {
 		return 0
@@ -42,6 +50,8 @@ func (it *RowIterator) RowIndex() int {
 	return it.rowKeys[it.current]
 }
 
+// Row returns the current row as a dense slice of strings sized by the sheet's
+// max column. Empty cells yield "".
 func (it *RowIterator) Row() []string {
 	if it.current < 0 || it.current >= len(it.rowKeys) {
 		return nil
@@ -64,6 +74,8 @@ func (it *RowIterator) Row() []string {
 	return result
 }
 
+// Error reports the first error encountered during iteration. Currently
+// iteration is infallible and Error always returns nil.
 func (it *RowIterator) Error() error {
 	return nil
 }

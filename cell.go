@@ -5,6 +5,9 @@ import (
 	"time"
 )
 
+// SetCellValue writes value into the cell, auto-detecting its ODS type (string,
+// float, bool, date...). Pass a time.Time for dates; integers become floats.
+// Use the typed setters (SetCellStr, SetCellFloat...) for explicit control.
 func (f *File) SetCellValue(sheet, cellRef string, value interface{}) error {
 	if f.closed {
 		return ErrFileClosed
@@ -25,6 +28,10 @@ func (f *File) SetCellValue(sheet, cellRef string, value interface{}) error {
 	return nil
 }
 
+// GetCellValue returns the raw cell value rendered as a string. Booleans are
+// returned as "TRUE"/"FALSE"; floats use the default Go formatting. For a
+// localized representation that honors the cell's number format use
+// GetCellFormattedValue.
 func (f *File) GetCellValue(sheet, cellRef string) (string, error) {
 	if f.closed {
 		return "", ErrFileClosed
@@ -47,6 +54,8 @@ func (f *File) GetCellValue(sheet, cellRef string) (string, error) {
 	return cellValueToString(c.valueType, c.rawValue), nil
 }
 
+// GetCellType returns the cell's ODS value type. CellTypeEmpty is returned for
+// unset cells.
 func (f *File) GetCellType(sheet, cellRef string) (CellType, error) {
 	if f.closed {
 		return CellTypeEmpty, ErrFileClosed
@@ -69,6 +78,7 @@ func (f *File) GetCellType(sheet, cellRef string) (CellType, error) {
 	return c.valueType, nil
 }
 
+// SetCellStr writes value as a string cell.
 func (f *File) SetCellStr(sheet, cellRef, value string) error {
 	if f.closed {
 		return ErrFileClosed
@@ -88,6 +98,8 @@ func (f *File) SetCellStr(sheet, cellRef, value string) error {
 	return nil
 }
 
+// SetCellInt writes value as a float cell. ODS does not distinguish integer
+// cells from float cells; the stored type is CellTypeFloat.
 func (f *File) SetCellInt(sheet, cellRef string, value int64) error {
 	if f.closed {
 		return ErrFileClosed
@@ -108,6 +120,7 @@ func (f *File) SetCellInt(sheet, cellRef string, value int64) error {
 	return nil
 }
 
+// SetCellFloat writes value as a float cell.
 func (f *File) SetCellFloat(sheet, cellRef string, value float64) error {
 	if f.closed {
 		return ErrFileClosed
@@ -128,6 +141,7 @@ func (f *File) SetCellFloat(sheet, cellRef string, value float64) error {
 	return nil
 }
 
+// SetCellBool writes value as a boolean cell.
 func (f *File) SetCellBool(sheet, cellRef string, value bool) error {
 	if f.closed {
 		return ErrFileClosed
@@ -148,6 +162,7 @@ func (f *File) SetCellBool(sheet, cellRef string, value bool) error {
 	return nil
 }
 
+// SetCellDate writes value as a date cell using the ODS ISO-8601 encoding.
 func (f *File) SetCellDate(sheet, cellRef string, value time.Time) error {
 	if f.closed {
 		return ErrFileClosed
@@ -168,6 +183,7 @@ func (f *File) SetCellDate(sheet, cellRef string, value time.Time) error {
 	return nil
 }
 
+// GetCellFloat parses the cell value as a float64. It returns 0 for empty cells.
 func (f *File) GetCellFloat(sheet, cellRef string) (float64, error) {
 	if f.closed {
 		return 0, ErrFileClosed
@@ -190,6 +206,8 @@ func (f *File) GetCellFloat(sheet, cellRef string) (float64, error) {
 	return parseFloat(c.rawValue)
 }
 
+// GetCellInt parses the cell value and truncates it to int64. It returns 0 for
+// empty cells.
 func (f *File) GetCellInt(sheet, cellRef string) (int64, error) {
 	if f.closed {
 		return 0, ErrFileClosed
@@ -212,6 +230,7 @@ func (f *File) GetCellInt(sheet, cellRef string) (int64, error) {
 	return parseInt(c.rawValue)
 }
 
+// GetCellBool parses the cell value as a boolean. It returns false for empty cells.
 func (f *File) GetCellBool(sheet, cellRef string) (bool, error) {
 	if f.closed {
 		return false, ErrFileClosed
@@ -234,6 +253,8 @@ func (f *File) GetCellBool(sheet, cellRef string) (bool, error) {
 	return parseBool(c.rawValue)
 }
 
+// GetCellDate parses the cell value as a time.Time. It returns the zero value
+// for empty cells.
 func (f *File) GetCellDate(sheet, cellRef string) (time.Time, error) {
 	if f.closed {
 		return time.Time{}, ErrFileClosed
@@ -256,6 +277,8 @@ func (f *File) GetCellDate(sheet, cellRef string) (time.Time, error) {
 	return parseDate(c.rawValue)
 }
 
+// GetRows returns every cell as a string in a dense 2D slice sized
+// [maxRow][maxCol]. Empty cells yield "". For large sheets prefer NewRowIterator.
 func (f *File) GetRows(sheet string) ([][]string, error) {
 	if f.closed {
 		return nil, ErrFileClosed
@@ -286,6 +309,8 @@ func (f *File) GetRows(sheet string) ([][]string, error) {
 	return result, nil
 }
 
+// SetSheetRow writes a horizontal run of cells starting at startCell. Each
+// value is type-detected by SetCellValue.
 func (f *File) SetSheetRow(sheet, startCell string, values []interface{}) error {
 	if f.closed {
 		return ErrFileClosed
@@ -308,6 +333,8 @@ func (f *File) SetSheetRow(sheet, startCell string, values []interface{}) error 
 	return nil
 }
 
+// GetSheetDimension returns the used range as an A1-style reference such as
+// "A1:D42". Empty sheets return "A1".
 func (f *File) GetSheetDimension(sheet string) (string, error) {
 	if f.closed {
 		return "", ErrFileClosed
@@ -329,6 +356,8 @@ func (f *File) GetSheetDimension(sheet string) (string, error) {
 	return fmt.Sprintf("A1:%s", endCell), nil
 }
 
+// SetRowValues writes values into the given 1-based row starting at column A.
+// Each value is type-detected like SetCellValue.
 func (f *File) SetRowValues(sheet string, row int, values []any) error {
 	if f.closed {
 		return sheetErr(sheet, ErrFileClosed)
@@ -349,6 +378,8 @@ func (f *File) SetRowValues(sheet string, row int, values []any) error {
 	return nil
 }
 
+// AppendRows appends rows of values after the current last row of the sheet.
+// Each value is type-detected like SetCellValue.
 func (f *File) AppendRows(sheet string, rows [][]any) error {
 	if f.closed {
 		return sheetErr(sheet, ErrFileClosed)

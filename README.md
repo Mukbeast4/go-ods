@@ -12,7 +12,7 @@ Pure Go library for reading, writing, and evaluating ODS (OpenDocument Spreadshe
 
 - Read and write `.ods` files (OpenDocument Spreadsheet)
 - Cell value management with typed getters/setters (string, int, float, bool, date)
-- Formula evaluation engine with 20+ spreadsheet functions
+- Formula evaluation engine with 45+ spreadsheet functions
 - Formula recalculation with dependency graph and circular reference detection
 - Auto-recalc mode: formulas update automatically when cell values change
 - Sheet management (create, copy, rename, delete)
@@ -102,12 +102,12 @@ f.SetCellFloat("Sheet1", "A1", 50)
 
 | Category | Functions |
 |----------|-----------|
-| Math | `SUM`, `AVERAGE`, `MIN`, `MAX`, `ABS`, `ROUND`, `FLOOR`, `CEIL`, `INT`, `MOD`, `POWER`, `SQRT` |
-| Logic | `IF`, `AND`, `OR`, `NOT`, `IFERROR` |
+| Math | `SUM`, `AVERAGE`, `MIN`, `MAX`, `ABS`, `ROUND`, `FLOOR`, `CEIL`, `INT`, `MOD`, `POWER`, `SQRT`, `RAND`, `RANDBETWEEN` |
+| Logic | `IF`, `IFS`, `SWITCH`, `AND`, `OR`, `NOT`, `IFERROR` |
 | Text | `CONCATENATE`, `LEN`, `TRIM`, `UPPER`, `LOWER`, `LEFT`, `RIGHT`, `MID`, `FIND`, `SEARCH`, `SUBSTITUTE`, `REPLACE`, `TEXT`, `VALUE` |
-| Stats | `COUNT`, `COUNTA`, `COUNTIF`, `COUNTIFS` |
+| Stats | `COUNT`, `COUNTA`, `COUNTIF`, `COUNTIFS`, `MEDIAN`, `STDEV`, `STDEVP`, `VAR`, `VARP`, `RANK`, `LARGE`, `SMALL`, `PERCENTILE` |
 | Conditional | `SUMIF`, `SUMIFS`, `SUMPRODUCT` |
-| Lookup | `VLOOKUP`, `HLOOKUP`, `INDEX`, `MATCH` |
+| Lookup | `VLOOKUP`, `HLOOKUP`, `XLOOKUP`, `INDEX`, `MATCH` |
 | Date/Time | `DATE`, `TODAY`, `NOW`, `YEAR`, `MONTH`, `DAY` |
 
 ## Reading ODS Files

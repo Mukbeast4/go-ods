@@ -49,10 +49,8 @@ func (f *File) EvaluateFormula(sheet, cellRef string, extraValues CellValues) (i
 	}
 
 	values := collectCellValues(s)
-	if extraValues != nil {
-		for k, v := range extraValues {
-			values[k] = v
-		}
+	for k, v := range extraValues {
+		values[k] = v
 	}
 
 	p := &formulaParser{input: c.formula, pos: 0, values: values, file: f}
@@ -875,7 +873,7 @@ func evalCEILING(args []interface{}) (interface{}, error) {
 func evalCONCATENATE(args []interface{}) (interface{}, error) {
 	var sb strings.Builder
 	for _, a := range args {
-		sb.WriteString(fmt.Sprintf("%v", a))
+		fmt.Fprintf(&sb, "%v", a)
 	}
 	return sb.String(), nil
 }
@@ -1086,19 +1084,19 @@ func evalCOUNTIFS(args []interface{}) (interface{}, error) {
 	}
 	pairs := len(args) / 2
 	ranges := make([][]interface{}, pairs)
-	criterias := make([]string, pairs)
+	criteriaVals := make([]string, pairs)
 	for i := 0; i < pairs; i++ {
 		ranges[i] = flattenArg(args[i*2])
 		if ranges[i] == nil {
 			return float64(0), nil
 		}
-		criterias[i] = fmt.Sprintf("%v", args[i*2+1])
+		criteriaVals[i] = fmt.Sprintf("%v", args[i*2+1])
 	}
 	count := 0
 	for idx := range ranges[0] {
 		allMatch := true
 		for p := 0; p < pairs; p++ {
-			if idx >= len(ranges[p]) || !matchesCriteria(ranges[p][idx], criterias[p]) {
+			if idx >= len(ranges[p]) || !matchesCriteria(ranges[p][idx], criteriaVals[p]) {
 				allMatch = false
 				break
 			}
@@ -1120,19 +1118,19 @@ func evalSUMIFS(args []interface{}) (interface{}, error) {
 	}
 	pairs := (len(args) - 1) / 2
 	ranges := make([][]interface{}, pairs)
-	criterias := make([]string, pairs)
+	criteriaVals := make([]string, pairs)
 	for i := 0; i < pairs; i++ {
 		ranges[i] = flattenArg(args[1+i*2])
 		if ranges[i] == nil {
 			return float64(0), nil
 		}
-		criterias[i] = fmt.Sprintf("%v", args[2+i*2])
+		criteriaVals[i] = fmt.Sprintf("%v", args[2+i*2])
 	}
 	sum := 0.0
 	for idx := range ranges[0] {
 		allMatch := true
 		for p := 0; p < pairs; p++ {
-			if idx >= len(ranges[p]) || !matchesCriteria(ranges[p][idx], criterias[p]) {
+			if idx >= len(ranges[p]) || !matchesCriteria(ranges[p][idx], criteriaVals[p]) {
 				allMatch = false
 				break
 			}
